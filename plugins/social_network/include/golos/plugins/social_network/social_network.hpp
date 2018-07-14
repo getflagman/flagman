@@ -6,6 +6,7 @@
 #include <golos/plugins/follow/plugin.hpp>
 #include <golos/api/account_vote.hpp>
 #include <golos/api/vote_state.hpp>
+#include <golos/protocol/types.hpp>
 
 namespace golos { namespace plugins { namespace social_network {
     using plugins::json_rpc::msg_pack;
@@ -13,6 +14,7 @@ namespace golos { namespace plugins { namespace social_network {
     using golos::api::account_vote;
     using golos::api::vote_state;
     using golos::api::comment_api_object;
+    using fc::time_point_sec;
     using namespace golos::chain;
 
     DEFINE_API_ARGS(get_content,                msg_pack, discussion)
@@ -57,4 +59,12 @@ namespace golos { namespace plugins { namespace social_network {
         struct impl;
         std::unique_ptr<impl> pimpl;
     };
+
+    struct comment_last_update_object{
+        comment_id_type comment;
+        account_name_type parent_author;
+        account_name_type author;
+        time_point_sec last_update;
+    };
+
 } } } // golos::plugins::social_network
