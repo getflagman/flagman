@@ -78,9 +78,7 @@ namespace golos {
             account_name_type author;
             shared_string permlink;
 
-            time_point_sec last_update;
             time_point_sec created;
-            time_point_sec active; ///< the last time this post was "touched" by voting or reply
             time_point_sec last_payout;
 
             uint16_t depth = 0; ///< used to track max nested depth
