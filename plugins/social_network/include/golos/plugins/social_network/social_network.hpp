@@ -8,6 +8,8 @@
 #include <golos/api/vote_state.hpp>
 #include <golos/protocol/types.hpp>
 
+#include <boost/multi_index/composite_key.hpp>
+
 namespace golos { namespace plugins { namespace social_network {
     using plugins::json_rpc::msg_pack;
     using golos::api::discussion;
@@ -62,9 +64,29 @@ namespace golos { namespace plugins { namespace social_network {
 
     struct comment_last_update_object{
         comment_id_type comment;
-        account_name_type parent_author;
-        account_name_type author;
         time_point_sec last_update;
+        account_name_type author;
+        account_name_type parent_author;
+
+        struct by_last_update;
+        struct by_author_last_update;
+
+        typedef multi_index_container <
+                comment_last_update_object,
+                indexed_by<
+                        ordered_unique <
+                                tag<by_last_update>,
+                                composite_key<comment_last_update_object,
+                                        member <comment_last_update_object, time_point_sec, &comment_last_update_object::last_update>,
+                                        member<comment_last_update_object, account_name_type, &comment_last_update_object::author>,
+                                composite_key_compare <std::greater<time_point_sec>, std::less<account_name_type>>>
+                >,
+                allocator <comment_last_update_object>
+        >
+        comment_last_update_index;
+
     };
 
 } } } // golos::plugins::social_network
+
+CHAINBASE_SET_INDEX_TYPE(golos::plugins::social_network::comment_last_update_object, golos::plugins::social_network::comment_last_update_object::comment_last_update_index)
