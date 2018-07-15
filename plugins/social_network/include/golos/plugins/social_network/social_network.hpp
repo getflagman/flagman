@@ -6,6 +6,9 @@
 #include <golos/plugins/follow/plugin.hpp>
 #include <golos/api/account_vote.hpp>
 #include <golos/api/vote_state.hpp>
+#include <golos/protocol/asset.hpp>
+#include <golos/protocol/config.hpp>
+#include <golos/protocol/steem_virtual_operations.hpp>
 
 namespace golos { namespace plugins { namespace social_network {
     using plugins::json_rpc::msg_pack;
@@ -57,4 +60,26 @@ namespace golos { namespace plugins { namespace social_network {
         struct impl;
         std::unique_ptr<impl> pimpl;
     };
+
+    struct comment_reward_object
+    {
+        comment_reward_object(){
+        }
+
+        comment_reward_object(author_reward_operation &a)
+        : author_gbg_payout_value(a.sbd_payout), author_golos_payout_value(a.steem_payout), author_gests_payout_value(a.vesting_payout){
+        }
+
+            comment_id_type comment;
+            asset total_payout_value{0, SBD_SYMBOL};
+            asset author_rewards{0, STEEM_SYMBOL};
+            asset author_gbg_payout_value{0, SBD_SYMBOL};
+            asset author_golos_payout_value{0, STEEM_SYMBOL};
+            asset author_gests_payout_value{0, VESTS_SYMBOL};
+            asset beneficiary_payout_value{0, SBD_SYMBOL};
+            asset beneficiary_gests_payout_value{0, VESTS_SYMBOL};
+            asset curator_payout_value{0, SBD_SYMBOL};
+            asset curator_gests_payout_value{0, VESTS_SYMBOL};
+    };
+
 } } } // golos::plugins::social_network

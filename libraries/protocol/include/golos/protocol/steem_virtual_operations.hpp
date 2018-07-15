@@ -3,6 +3,7 @@
 #include <golos/protocol/base.hpp>
 #include <golos/protocol/block_header.hpp>
 #include <golos/protocol/asset.hpp>
+#include <golos/protocol/types.hpp>
 
 #include <fc/utf8.hpp>
 
@@ -22,6 +23,7 @@ namespace golos { namespace protocol {
             asset sbd_payout;
             asset steem_payout;
             asset vesting_payout;
+            share_type author_rewards = 0;
         };
 
 

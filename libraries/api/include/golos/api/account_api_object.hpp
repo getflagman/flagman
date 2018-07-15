@@ -5,6 +5,7 @@
 #include <golos/chain/database.hpp>
 #include <golos/protocol/types.hpp>
 #include <golos/chain/steem_object_types.hpp>
+#include <plugins/social_network/include/golos/plugins/social_network/social_network.hpp>
 
 namespace golos { namespace api {
 
@@ -14,11 +15,14 @@ using protocol::share_type;
 using protocol::authority;
 using protocol::account_name_type;
 using protocol::public_key_type;
-
+using plugins::social_network::comment_reward_object;
 
 struct account_api_object {
     account_api_object(const account_object&, const golos::chain::database&);
     account_api_object();
+    account_api_object(comment_reward_object &c)
+            :balance(c.author_gbg_payout_value), sbd_balance(c.author_gbg_payout_value), vesting_shares(c.author_gests_payout_value) {
+    }
 
     account_object::id_type id;
 

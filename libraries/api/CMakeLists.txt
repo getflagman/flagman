@@ -37,6 +37,8 @@ set_property(TARGET golos_${CURRENT_TARGET} PROPERTY EXPORT_NAME ${CURRENT_TARGE
 target_link_libraries(
     golos_${CURRENT_TARGET}
     golos_chain
+    golos::chain_plugin
+    golos::follow
     golos_protocol
     graphene_utilities
     fc
