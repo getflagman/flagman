@@ -1969,15 +1969,19 @@ namespace golos { namespace chain {
 
         void limit_order_create2_evaluator::do_apply(const limit_order_create2_operation &o) {
             database &_db = db();
-            FC_ASSERT(o.expiration >
-                      _db.head_block_time(), "Limit order has to expire after head block time.");
+            GOLOS_CHECK_OP_PARAM(o, expiration, {
+                GOLOS_CHECK_VALUE(o.expiration > _db.head_block_time(), 
+                        "Limit order has to expire after head block time.");
+            });
 
             const auto &owner = _db.get_account(o.owner);
 
-            FC_ASSERT(_db.get_balance(owner, o.amount_to_sell.symbol) >=
-                      o.amount_to_sell, "Account does not have sufficient funds for limit order.");
-
+            GOLOS_CHECK_BALANCE(owner, MAIN_BALANCE, o.amount_to_sell);
             _db.adjust_balance(owner, -o.amount_to_sell);
+
+            if (nullptr != _db.find_limit_order(o.owner, o.orderid)) {
+                GOLOS_THROW_OBJECT_ALREADY_EXIST("limit_order", fc::mutable_variant_object()("account",o.owner)("order_id",o.orderid));
+            }
 
             const auto &order = _db.create<limit_order_object>([&](limit_order_object &obj) {
                 obj.created = _db.head_block_time();
@@ -1991,7 +1995,8 @@ namespace golos { namespace chain {
             bool filled = _db.apply_order(order);
 
             if (o.fill_or_kill)
-                FC_ASSERT(filled, "Cancelling order because it was not filled.");
+                GOLOS_CHECK_LOGIC(filled, logic_exception::cancelling_not_filled_order,
+                        "Cancelling order because it was not filled.");
         }
 
         void limit_order_cancel_evaluator::do_apply(const limit_order_cancel_operation &o) {
