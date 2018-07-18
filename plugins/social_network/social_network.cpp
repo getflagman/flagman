@@ -5,6 +5,7 @@
 #include <golos/chain/steem_objects.hpp>
 #include <golos/api/discussion_helper.hpp>
 #include <golos/plugins/tags/plugin.hpp>
+#include <golos/chain/operation_notification.hpp>
 
 #define CHECK_ARG_SIZE(_S)                                 \
    FC_ASSERT(                                              \
@@ -31,9 +32,85 @@ namespace golos { namespace plugins { namespace social_network {
     using golos::plugins::tags::fill_promoted;
     using golos::api::discussion_helper;
 
+    struct operation_visitor {
+        operation_visitor(database& db)
+            : db_(db) {
+        }
+        
+        using result_type = void;
+
+        database& db_;
+
+        result_type operator()(const author_reward_operation& op) const {
+            if (!db_.has_index<comment_reward_index>())
+                return;
+
+            const auto &comment = db_.get_comment(op.author, op.permlink);
+
+            const auto& cr_idx = db_.get_index<comment_reward_index>().indices().get<golos::plugins::social_network::by_comment>();
+            auto cr_itr = cr_idx.find(comment_id_type(comment.id));
+            if (cr_itr == cr_idx.end()) {
+                db_.create<comment_reward_object>([&](golos::plugins::social_network::comment_reward_object& cr) {
+                    cr.comment = comment.id;
+                    cr.author_rewards = op.author_rewards;
+                });
+            } else {
+                db_.modify(*cr_itr, [&](comment_reward_object& cr) {
+                    cr.author_rewards += op.author_rewards;
+                });
+            }
+        }
+
+        result_type operator()(const comment_payout_update_operation& op) const {
+            if (!db_.has_index<comment_reward_index>())
+                return;
+
+            const auto &comment = db_.get_comment(op.author, op.permlink);
+
+            const auto& cr_idx = db_.get_index<comment_reward_index>().indices().get<golos::plugins::social_network::by_comment>();
+            auto cr_itr = cr_idx.find(comment_id_type(comment.id));
+            if (cr_itr == cr_idx.end()) {
+                db_.create<comment_reward_object>([&](golos::plugins::social_network::comment_reward_object& cr) {
+                    cr.comment = comment.id;
+                    cr.total_payout_value = op.total_payout_value;
+                    cr.beneficiary_payout_value = op.beneficiary_payout_value;
+                    cr.curator_payout_value = op.curator_payout_value;
+                });
+            } else {
+                db_.modify(*cr_itr, [&](comment_reward_object& cr) {
+                    cr.total_payout_value += op.total_payout_value;
+                    cr.beneficiary_payout_value += op.beneficiary_payout_value;
+                    cr.curator_payout_value += op.curator_payout_value;
+                });
+            }
+        }
+
+        template<typename Op>
+        void operator()(Op&&) const {
+        } /// ignore all other ops
+    };
+
     struct social_network::impl final {
-        impl(): database_(appbase::app().get_plugin<chain::plugin>().db()) {
+        impl(const boost::program_options::variables_map& options)
+                : database_(appbase::app().get_plugin<chain::plugin>().db()) {
             helper = std::make_unique<discussion_helper>(database_, follow::fill_account_reputation, fill_promoted);
+
+            if (options.at("store-comment-rewards").as<bool>()) {
+                golos::chain::add_plugin_index<comment_reward_index>(database_);
+            }
+
+            // Do not enable it for store-comment-rewards only
+            // because this callback could be need for other cases in future
+            database_.post_apply_operation.connect([&](const operation_notification &note) {
+                try {
+                    // plugins shouldn't ever throw
+                    note.op.visit(operation_visitor(database()));
+                } catch (const fc::exception& e) {
+                    edump((e.to_detail_string()));
+                } catch (...) {
+                    elog("unhandled exception");
+                }
+            });
         }
 
         ~impl() = default;
@@ -105,13 +182,18 @@ namespace golos { namespace plugins { namespace social_network {
     social_network::social_network() = default;
 
     void social_network::set_program_options(
-        boost::program_options::options_description&,
-        boost::program_options::options_description& config_file_options
+        boost::program_options::options_description& cli,
+        boost::program_options::options_description& cfg
     ) {
+        cfg.add_options()
+            (
+                "store-comment-rewards", boost::program_options::bool_switch()->default_value(true),
+                "store comment rewards"
+            );
     }
 
     void social_network::plugin_initialize(const boost::program_options::variables_map& options) {
-        pimpl = std::make_unique<impl>();
+        pimpl = std::make_unique<impl>(options);
         JSON_RPC_REGISTER_API(name());
     }
 

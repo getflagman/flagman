@@ -57,4 +57,69 @@ namespace golos { namespace plugins { namespace social_network {
         struct impl;
         std::unique_ptr<impl> pimpl;
     };
+
+    //
+    // Plugins should #define their SPACE_ID's so plugins with
+    // conflicting SPACE_ID assignments can be compiled into the
+    // same binary (by simply re-assigning some of the conflicting #defined
+    // SPACE_ID's in a build script).
+    //
+    // Assignment of SPACE_ID's cannot be done at run-time because
+    // various template automagic depends on them being known at compile
+    // time.
+    //
+#ifndef SOCIAL_NETWORK_SPACE_ID
+#define SOCIAL_NETWORK_SPACE_ID 10
+#endif
+
+    // Plugins need to define object type IDs such that they do not conflict
+    // globally. If each plugin uses the upper 8 bits as a space identifier,
+    // with 0 being for chain, then the lower 8 bits are free for each plugin
+    // to define as they see fit.
+    enum social_network_object_types {
+        comment_reward_object_type = (SOCIAL_NETWORK_SPACE_ID << 8)
+    };
+
+    class comment_reward_object: public object<comment_reward_object_type, comment_reward_object> {
+    public:
+                comment_reward_object() = delete;
+        template<typename Constructor, typename Allocator>
+        comment_reward_object(Constructor&& c, allocator<Allocator> a) {
+            c(*this);
+        }
+
+        id_type id;
+
+        //comment_reward_object(author_reward_operation &a)
+        //: author_gbg_payout_value(a.sbd_payout), author_golos_payout_value(a.steem_payout), author_gests_payout_value(a.vesting_payout){
+        //}
+
+        comment_id_type comment;
+        asset total_payout_value{0, SBD_SYMBOL};
+        asset author_rewards{0, STEEM_SYMBOL};
+        asset author_gbg_payout_value{0, SBD_SYMBOL};
+        asset author_golos_payout_value{0, STEEM_SYMBOL};
+        asset author_gests_payout_value{0, VESTS_SYMBOL};
+        asset beneficiary_payout_value{0, SBD_SYMBOL};
+        asset beneficiary_gests_payout_value{0, VESTS_SYMBOL};
+        asset curator_payout_value{0, SBD_SYMBOL};
+        asset curator_gests_payout_value{0, VESTS_SYMBOL};
+    };
+
+    typedef object_id<comment_reward_object> comment_reward_id_type;
+
+    struct by_comment;
+
+    typedef multi_index_container<
+          comment_reward_object,
+          indexed_by<
+             ordered_unique<tag<by_id>, member<comment_reward_object, comment_reward_object::id_type, &comment_reward_object::id>>,
+             ordered_unique<tag<by_comment>, member<comment_reward_object, comment_object::id_type, &comment_reward_object::comment>>>,
+        allocator<comment_reward_object>
+    > comment_reward_index;
+
 } } } // golos::plugins::social_network
+
+
+CHAINBASE_SET_INDEX_TYPE(
+    golos::plugins::social_network::comment_reward_object, golos::plugins::social_network::comment_reward_index)

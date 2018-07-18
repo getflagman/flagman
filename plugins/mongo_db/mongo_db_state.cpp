@@ -4,6 +4,7 @@
 #include <golos/chain/account_object.hpp>
 #include <golos/chain/steem_objects.hpp>
 #include <golos/chain/proposal_object.hpp>
+#include <golos/plugins/social_network/social_network.hpp>
 
 #include <bsoncxx/builder/stream/array.hpp>
 #include <bsoncxx/builder/stream/value_context.hpp>
@@ -75,14 +76,11 @@ namespace mongo_db {
             format_value(body, "allow_curation_rewards", comment.allow_curation_rewards);
             format_value(body, "allow_replies", comment.allow_replies);
             format_value(body, "allow_votes", comment.allow_votes);
-            format_value(body, "author_rewards", comment.author_rewards);
-            format_value(body, "beneficiary_payout", comment.beneficiary_payout_value);
             format_value(body, "cashout_time", comment.cashout_time);
             format_value(body, "children", comment.children);
             format_value(body, "children_abs_rshares", comment.children_abs_rshares);
             format_value(body, "children_rshares2", comment.children_rshares2);
             format_value(body, "created", comment.created);
-            format_value(body, "curator_payout", comment.curator_payout_value);
             format_value(body, "depth", comment.depth);
             format_value(body, "last_payout", comment.last_payout);
             format_value(body, "last_update", comment.last_update);
@@ -94,7 +92,6 @@ namespace mongo_db {
             format_value(body, "parent_permlink", comment.parent_permlink);
             format_value(body, "percent_steem_dollars", comment.percent_steem_dollars);
             format_value(body, "reward_weight", comment.reward_weight);
-            format_value(body, "total_payout", comment.total_payout_value);
             format_value(body, "total_vote_weight", comment.total_vote_weight);
             format_value(body, "vote_rshares", comment.vote_rshares);
 
@@ -132,6 +129,17 @@ namespace mongo_db {
             format_value(body, "title", content.title);
             format_value(body, "body", content.body);
             format_value(body, "json_metadata", content.json_metadata);
+
+            if (db_.has_index<golos::plugins::social_network::comment_reward_index>()) {
+                const auto& cr_idx = db_.get_index<golos::plugins::social_network::comment_reward_index>().indices().get<golos::plugins::social_network::by_comment>();
+                auto cr_itr = cr_idx.find(comment_id_type(comment.id));
+                if (cr_itr != cr_idx.end()) {
+                    format_value(body, "author_rewards", cr_itr->author_rewards);
+                    format_value(body, "beneficiary_payout", cr_itr->beneficiary_payout_value);
+                    format_value(body, "curator_payout", cr_itr->curator_payout_value);
+                    format_value(body, "total_payout", cr_itr->total_payout_value);
+                }
+            }
 
             std::string category, root_oid;
             if (comment.parent_author == STEEMIT_ROOT_POST_PARENT) {

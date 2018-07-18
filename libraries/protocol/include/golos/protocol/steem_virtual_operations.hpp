@@ -12,9 +12,9 @@ namespace golos { namespace protocol {
             author_reward_operation() {
             }
 
-            author_reward_operation(const account_name_type &a, const string &p, const asset &s, const asset &st, const asset &v)
+            author_reward_operation(const account_name_type &a, const string &p, const asset &s, const asset &st, const asset &v, const share_type &ar)
                     : author(a), permlink(p), sbd_payout(s), steem_payout(st),
-                      vesting_payout(v) {
+                      vesting_payout(v), author_rewards(ar) {
             }
 
             account_name_type author;
@@ -22,6 +22,7 @@ namespace golos { namespace protocol {
             asset sbd_payout;
             asset steem_payout;
             asset vesting_payout;
+            share_type author_rewards = 0;
         };
 
 
@@ -165,12 +166,15 @@ namespace golos { namespace protocol {
             comment_payout_update_operation() {
             }
 
-            comment_payout_update_operation(const account_name_type &a, const string &p)
-                    : author(a), permlink(p) {
+            comment_payout_update_operation(const account_name_type &a, const string &p, const asset &tpv, const asset &cpv, const asset &bpv)
+                    : author(a), permlink(p), total_payout_value(tpv), curator_payout_value(cpv), beneficiary_payout_value(bpv) {
             }
 
             account_name_type author;
             string permlink;
+            asset total_payout_value = asset(0, SBD_SYMBOL);
+            asset curator_payout_value = asset(0, SBD_SYMBOL);
+            asset beneficiary_payout_value = asset(0, SBD_SYMBOL);
         };
 
         struct comment_benefactor_reward_operation : public virtual_operation {
