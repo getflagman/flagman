@@ -5,11 +5,16 @@
 
 #include <golos/chain/operation_notification.hpp>
 
+#include <fc/reflect/reflect.hpp>
+
 #include <boost/algorithm/string.hpp>
 #define STEEM_NAMESPACE_PREFIX "golos::protocol::"
 
 #define CHECK_ARG_SIZE(s) \
    FC_ASSERT( args.args->size() == s, "Expected #s argument(s), was ${n}", ("n", args.args->size()) );
+#define CHECK_ARGS_COUNT(min, max) \
+   auto n_args = args.args->size(); \
+   FC_ASSERT(n_args >= (min) && n_args <= (max), "Expected #min-#max arguments, got ${n}", ("n", n_args));
 
 namespace golos { namespace plugins { namespace account_history {
 
@@ -32,18 +37,6 @@ if( options.count(name) ) { \
     std::transform(ops.begin(), ops.end(), std::inserter(container, container.end()), &dejsonify<type>); \
 }
 //
-
-std::string to_string(operation_direction_type dir) {
-    switch (dir) {
-        case operation_direction_type::sender:
-            return "sender";
-        case operation_direction_type::receiver:
-            return "receaver";
-        default:
-            return "any";
-    }
-    return "any";
-}
 
     struct operation_visitor final {
         operation_visitor(
@@ -133,20 +126,28 @@ std::string to_string(operation_direction_type dir) {
         ) {
             FC_ASSERT(limit <= 10000, "Limit of ${l} is greater than maxmimum allowed", ("l", limit));
             FC_ASSERT(from >= limit, "From must be greater than limit");
-            FC_ASSERT(static_cast<uint8_t>(dir) <= static_cast<uint8_t>(operation_direction_type::any),
-                      "Invalid direction ${l} type", ("l", static_cast<uint8_t>(dir)));
-            //   idump((account)(from)(limit));
-            const auto& idx = database.get_index<account_history_index>().indices().get<by_account>();
-            auto itr = idx.lower_bound(std::make_tuple(account, from));
-            //   if( itr != idx.end() ) idump((*itr));
-            auto end = idx.upper_bound(std::make_tuple(account, std::max(int64_t(0), int64_t(itr->sequence) - limit)));
-            //   if( end != idx.end() ) idump((*end));
+            FC_ASSERT(dir <= operation_direction_type::any, "Invalid direction ${l} type", ("l", static_cast<uint8_t>(dir)));
 
-            std::map<uint32_t, applied_operation> result;
-            for (; itr != end; ++itr) {
-                if (dir == itr->dir || dir == operation_direction_type::any) {
+            if (dir == operation_direction_type::any) {
+                const auto& idx = database.get_index<account_history_index>().indices().get<by_account>();
+                //   idump((account)(from)(limit));
+                auto itr = idx.lower_bound(std::make_tuple(account, from));
+                //   if( itr != idx.end() ) idump((*itr));
+                auto end = idx.upper_bound(std::make_tuple(account, std::max(int64_t(0), int64_t(itr->sequence) - limit)));
+                //   if( end != idx.end() ) idump((*end));
+
+                std::map<uint32_t, applied_operation> result;
+                for (; itr != end; ++itr) {
                     result[itr->sequence] = database.get(itr->op);
                 }
+                return result;
+            }
+            const auto& idx = database.get_index<account_history_index>().indices().get<by_direction>();
+            auto itr = idx.lower_bound(dir);
+            auto end = idx.end();
+            std::map<uint32_t, applied_operation> result;
+            for (; itr != end; ++itr) {
+                result[itr->sequence] = database.get(itr->op);
             }
             return result;
         }
@@ -157,14 +158,14 @@ std::string to_string(operation_direction_type dir) {
     };
 
     DEFINE_API(plugin, get_account_history) {
-        auto n_args = args.args->size();
-        FC_ASSERT(3 <= n_args && n_args <= 4);
+        CHECK_ARGS_COUNT(3, 4)
         auto account = args.args->at(0).as<std::string>();
         auto from = args.args->at(1).as<uint64_t>();
         auto limit = args.args->at(2).as<uint32_t>();
         auto dir = operation_direction_type::any;
-        if (3 < n_args) {
+        if (3 < args.args->size()) {
             dir = static_cast<operation_direction_type>(args.args->at(3).as<uint8_t>());
+            FC_ASSERT(dir <= operation_direction_type::any);
         }
 
         return pimpl->database.with_weak_read_lock([&]() {
@@ -256,7 +257,8 @@ std::string to_string(operation_direction_type dir) {
             impacted.insert(make_pair(op.owner, operation_direction_type::any));
         }
 
-        void operator()(const transfer_operation& op) {
+        template<class op_type>
+        void insert_from_to_direction(const op_type& op) {
             if (op.from == op.to) {
                 impacted.insert(make_pair(op.from, operation_direction_type::any));
                 impacted.insert(make_pair(op.to, operation_direction_type::any));
@@ -264,6 +266,10 @@ std::string to_string(operation_direction_type dir) {
                 impacted.insert(make_pair(op.from, operation_direction_type::sender));
                 impacted.insert(make_pair(op.to, operation_direction_type::receiver));
             }
+        }
+
+        void operator()(const transfer_operation& op) {
+            insert_from_to_direction(op);
         }
 
         void operator()(const transfer_to_vesting_operation& op) {
@@ -347,50 +353,38 @@ std::string to_string(operation_direction_type dir) {
 
         void operator()(const change_recovery_account_operation& op) {
             impacted.insert(make_pair(op.account_to_recover, operation_direction_type::any));
+            impacted.insert(make_pair(op.new_recovery_account, operation_direction_type::any));
+        }
+
+        template<class op_type>
+        void insert_from_to_agent_direction(const op_type& op) {
+            impacted.insert(make_pair(op.from, operation_direction_type::sender));
+            impacted.insert(make_pair(op.to, operation_direction_type::receiver));
+            impacted.insert(make_pair(op.agent, operation_direction_type::receiver));
         }
 
         void operator()(const escrow_transfer_operation& op) {
-            impacted.insert(make_pair(op.from, operation_direction_type::sender));
-            impacted.insert(make_pair(op.to, operation_direction_type::receiver));
-            impacted.insert(make_pair(op.agent, operation_direction_type::receiver));
+            insert_from_to_agent_direction(op);
         }
 
         void operator()(const escrow_approve_operation& op) {
-            impacted.insert(make_pair(op.from, operation_direction_type::sender));
-            impacted.insert(make_pair(op.to, operation_direction_type::receiver));
-            impacted.insert(make_pair(op.agent, operation_direction_type::receiver));
+            insert_from_to_agent_direction(op);
         }
 
         void operator()(const escrow_dispute_operation& op) {
-            impacted.insert(make_pair(op.from, operation_direction_type::sender));
-            impacted.insert(make_pair(op.to, operation_direction_type::receiver));
-            impacted.insert(make_pair(op.agent, operation_direction_type::receiver));
+            insert_from_to_agent_direction(op);
         }
 
         void operator()(const escrow_release_operation& op) {
-            impacted.insert(make_pair(op.from, operation_direction_type::sender));
-            impacted.insert(make_pair(op.to, operation_direction_type::receiver));
-            impacted.insert(make_pair(op.agent, operation_direction_type::receiver));
+            insert_from_to_agent_direction(op);
         }
 
         void operator()(const transfer_to_savings_operation& op) {
-            if (op.from == op.to) {
-                impacted.insert(make_pair(op.from, operation_direction_type::any));
-                impacted.insert(make_pair(op.to, operation_direction_type::any));
-            } else {
-                impacted.insert(make_pair(op.from, operation_direction_type::sender));
-                impacted.insert(make_pair(op.to, operation_direction_type::receiver));
-            }
+            insert_from_to_direction(op);
         }
 
         void operator()(const transfer_from_savings_operation& op) {
-            if (op.from == op.to) {
-                impacted.insert(make_pair(op.from, operation_direction_type::any));
-                impacted.insert(make_pair(op.to, operation_direction_type::any));
-            } else {
-                impacted.insert(make_pair(op.from, operation_direction_type::sender));
-                impacted.insert(make_pair(op.to, operation_direction_type::receiver));
-            }
+            insert_from_to_direction(op);
         }
 
         void operator()(const cancel_transfer_from_savings_operation& op) {
@@ -402,8 +396,13 @@ std::string to_string(operation_direction_type dir) {
         }
 
         void operator()(const comment_benefactor_reward_operation& op) {
-            impacted.insert(make_pair(op.benefactor, operation_direction_type::receiver));
-            impacted.insert(make_pair(op.author, operation_direction_type::sender));
+            if (op.benefactor == op.author) {
+                impacted.insert(make_pair(op.benefactor, operation_direction_type::any));
+                impacted.insert(make_pair(op.author, operation_direction_type::any));
+            } else {
+                impacted.insert(make_pair(op.benefactor, operation_direction_type::receiver));
+                impacted.insert(make_pair(op.author, operation_direction_type::sender));
+            }
         }
 
         void operator()(const delegate_vesting_shares_operation& op) {
@@ -434,7 +433,13 @@ std::string to_string(operation_direction_type dir) {
         }
 
         void operator()(const proposal_delete_operation& op) {
-            impacted.insert(make_pair(op.requester, operation_direction_type::any));
+            if (op.author == op.requester) {
+                impacted.insert(make_pair(op.author, operation_direction_type::any));
+                impacted.insert(make_pair(op.requester, operation_direction_type::any));
+            } else {
+                impacted.insert(make_pair(op.author, operation_direction_type::receiver));
+                impacted.insert(make_pair(op.requester, operation_direction_type::sender));
+            }
         }
         //void operator()( const operation& op ){}
     };
@@ -512,3 +517,7 @@ std::string to_string(operation_direction_type dir) {
     }
 
 } } } // golos::plugins::account_history
+
+
+//from ‘const boost::multi_index::detail::ordered_index<boost::multi_index::composite_key<golos::plugins::account_history::account_history_object, boost::multi_index::member<golos::plugins::account_history::account_history_object, fc::fixed_string<fc::uint128_t>, &golos::plugins::account_history::account_history_object::account>, boost::multi_index::member<golos::plugins::account_history::account_history_object, unsigned int, &golos::plugins::account_history::account_history_object::sequence> >, boost::multi_index::composite_key_compare<std::less<fc::fixed_string<fc::uint128_t> >, std::greater<unsigned int> >, boost::multi_index::detail::nth_layer<4, golos::plugins::account_history::account_history_object, boost::multi_index::indexed_by<boost::multi_index::ordered_unique<boost::multi_index::tag<golos::chain::by_id>, boost::multi_index::member<golos::plugins::account_history::account_history_object, chainbase::object_id<golos::plugins::account_history::account_history_object>, &golos::plugins::account_history::account_history_object::id> >, boost::multi_index::ordered_non_unique<boost::multi_index::tag<golos::plugins::account_history::by_location>, boost::multi_index::composite_key<golos::plugins::account_history::account_history_object, boost::multi_index::member<golos::plugins::account_history::account_history_object, unsigned int, &golos::plugins::account_history::account_history_object::block> > >, boost::multi_index::ordered_non_unique<boost::multi_index::tag<golos::plugins::account_history::by_direction>, boost::multi_index::composite_key<golos::plugins::account_history::account_history_object, boost::multi_index::member<golos::plugins::account_history::account_history_object, golos::plugins::account_history::operation_direction_type, &golos::plugins::account_history::account_history_object::dir> > >, boost::multi_index::ordered_unique<boost::multi_index::tag<golos::plugins::account_history::by_account>, boost::multi_index::composite_key<golos::plugins::account_history::account_history_object, boost::multi_index::member<golos::plugins::account_history::account_history_object, fc::fixed_string<fc::uint128_t>, &golos::plugins::account_history::account_history_object::account>, boost::multi_index::member<golos::plugins::account_history::account_history_object, unsigned int, &golos::plugins::account_history::account_history_object::sequence> >, boost::multi_index::composite_key_compare<std::less<fc::fixed_string<fc::uint128_t> >, std::greater<unsigned int> > > >, boost::interprocess::allocator<golos::plugins::account_history::account_history_object, boost::interprocess::segment_manager<char, boost::interprocess::rbtree_best_fit<boost::interprocess::mutex_family>, boost::interprocess::iset_index> > >, boost::mpl::v_item<golos::plugins::account_history::by_account, boost::mpl::vector0<mpl_::na>, 0>, boost::multi_index::detail::ordered_unique_tag, boost::multi_index::detail::null_augment_policy>’ to
+//to   ‘const account_history_index& {aka const boost::multi_index::multi_index_container<golos::plugins::account_history::account_history_object, boost::multi_index::indexed_by<boost::multi_index::ordered_unique<boost::multi_index::tag<golos::chain::by_id>, boost::multi_index::member<golos::plugins::account_history::account_history_object, chainbase::object_id<golos::plugins::account_history::account_history_object>, &golos::plugins::account_history::account_history_object::id> >, boost::multi_index::ordered_non_unique<boost::multi_index::tag<golos::plugins::account_history::by_location>, boost::multi_index::composite_key<golos::plugins::account_history::account_history_object, boost::multi_index::member<golos::plugins::account_history::account_history_object, unsigned int, &golos::plugins::account_history::account_history_object::block> > >, boost::multi_index::ordered_non_unique<boost::multi_index::tag<golos::plugins::account_history::by_direction>, boost::multi_index::composite_key<golos::plugins::account_history::account_history_object, boost::multi_index::member<golos::plugins::account_history::account_history_object, golos::plugins::account_history::operation_direction_type, &golos::plugins::account_history::account_history_object::dir> > >, boost::multi_index::ordered_unique<boost::multi_index::tag<golos::plugins::account_history::by_account>, boost::multi_index::composite_key<golos::plugins::account_history::account_history_object, boost::multi_index::member<golos::plugins::account_history::account_history_object, fc::fixed_string<fc::uint128_t>, &golos::plugins::account_history::account_history_object::account>, boost::multi_index::member<golos::plugins::account_history::account_history_object, unsigned int, &golos::plugins::account_history::account_history_object::sequence> >, boost::multi_index::composite_key_compare<std::less<fc::fixed_string<fc::uint128_t> >, std::greater<unsigned int> > > >, boost::interprocess::allocator<golos::plugins::account_history::account_history_object, boost::interprocess::segment_manager<char, boost::interprocess::rbtree_best_fit<boost::interprocess::mutex_family>, boost::interprocess::iset_index> > >&}’
