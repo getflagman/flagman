@@ -429,7 +429,7 @@ namespace golos { namespace protocol {
         }
 
         void limit_order_cancel_operation::validate() const {
-            validate_account_name(owner);
+            GOLOS_CHECK_PARAM(owner, validate_account_name(owner));
         }
 
         void convert_operation::validate() const {

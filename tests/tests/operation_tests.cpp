@@ -3510,6 +3510,19 @@ BOOST_FIXTURE_TEST_SUITE(operation_tests, clean_database_fixture)
     BOOST_AUTO_TEST_CASE(limit_order_cancel_validate) {
         try {
             BOOST_TEST_MESSAGE("Testing: limit_order_cancel_validate");
+            limit_order_cancel_operation op;
+
+            BOOST_TEST_MESSAGE("--- success on valid parameters");
+            op.owner = "alice";
+            op.orderid = 1;
+            BOOST_CHECK_NO_THROW(op.validate());
+
+            BOOST_TEST_MESSAGE("--- failure when owner is empty");
+            op.owner = "";
+            GOLOS_CHECK_ERROR_PROPS(op.validate(),
+                CHECK_ERROR(invalid_parameter, "owner"));
+
+            validate_database();
         }
         FC_LOG_AND_RETHROW()
     }
@@ -3532,7 +3545,7 @@ BOOST_FIXTURE_TEST_SUITE(operation_tests, clean_database_fixture)
             tx.set_expiration(
                     db->head_block_time() + STEEMIT_MAX_TIME_UNTIL_EXPIRATION);
             tx.sign(alice_private_key, db->get_chain_id());
-            db->push_transaction(tx, 0);
+            BOOST_CHECK_NO_THROW(db->push_transaction(tx, 0));
 
             limit_order_cancel_operation op;
             op.owner = "alice";
@@ -3543,26 +3556,30 @@ BOOST_FIXTURE_TEST_SUITE(operation_tests, clean_database_fixture)
             tx.operations.push_back(op);
 
             BOOST_TEST_MESSAGE("--- Test failure when no signature.");
-            STEEMIT_REQUIRE_THROW(db->push_transaction(tx, database::skip_transaction_dupe_check), tx_missing_active_auth);
+            GOLOS_CHECK_ERROR_PROPS(db->push_transaction(tx, database::skip_transaction_dupe_check), 
+                CHECK_ERROR(tx_missing_active_auth, 0));
 
             BOOST_TEST_MESSAGE("--- Test success with account signature");
             tx.sign(alice_private_key, db->get_chain_id());
-            db->push_transaction(tx, database::skip_transaction_dupe_check);
+            BOOST_CHECK_NO_THROW(db->push_transaction(tx, database::skip_transaction_dupe_check));
 
             BOOST_TEST_MESSAGE("--- Test failure with duplicate signature");
             tx.sign(alice_private_key, db->get_chain_id());
-            STEEMIT_REQUIRE_THROW(db->push_transaction(tx, database::skip_transaction_dupe_check), tx_duplicate_sig);
+            GOLOS_CHECK_ERROR_PROPS(db->push_transaction(tx, database::skip_transaction_dupe_check), 
+                CHECK_ERROR(tx_duplicate_sig, 0));
 
             BOOST_TEST_MESSAGE("--- Test failure with additional incorrect signature");
             tx.signatures.clear();
             tx.sign(alice_private_key, db->get_chain_id());
             tx.sign(bob_private_key, db->get_chain_id());
-            STEEMIT_REQUIRE_THROW(db->push_transaction(tx, database::skip_transaction_dupe_check), tx_irrelevant_sig);
+            GOLOS_CHECK_ERROR_PROPS(db->push_transaction(tx, database::skip_transaction_dupe_check), 
+                CHECK_ERROR(tx_irrelevant_sig, 0));
 
             BOOST_TEST_MESSAGE("--- Test failure with incorrect signature");
             tx.signatures.clear();
             tx.sign(alice_post_key, db->get_chain_id());
-            STEEMIT_REQUIRE_THROW(db->push_transaction(tx, database::skip_transaction_dupe_check), tx_missing_active_auth);
+            GOLOS_CHECK_ERROR_PROPS(db->push_transaction(tx, database::skip_transaction_dupe_check), 
+                CHECK_ERROR(tx_missing_active_auth, 0));
 
             validate_database();
         }
@@ -3589,7 +3606,9 @@ BOOST_FIXTURE_TEST_SUITE(operation_tests, clean_database_fixture)
             tx.set_expiration(
                     db->head_block_time() + STEEMIT_MAX_TIME_UNTIL_EXPIRATION);
             tx.sign(alice_private_key, db->get_chain_id());
-            STEEMIT_REQUIRE_THROW(db->push_transaction(tx, 0), fc::exception);
+            GOLOS_CHECK_ERROR_PROPS(db->push_transaction(tx, 0),
+                CHECK_ERROR(tx_invalid_operation, 0,
+                    CHECK_ERROR(missing_object, "limit_order", make_limit_order_id("alice", 5))));
 
             BOOST_TEST_MESSAGE("--- Test cancel order");
 
@@ -3602,22 +3621,22 @@ BOOST_FIXTURE_TEST_SUITE(operation_tests, clean_database_fixture)
             tx.signatures.clear();
             tx.operations.push_back(create);
             tx.sign(alice_private_key, db->get_chain_id());
-            db->push_transaction(tx, 0);
+            BOOST_CHECK_NO_THROW(db->push_transaction(tx, 0));
 
-            BOOST_REQUIRE(limit_order_idx.find(std::make_tuple("alice", 5)) !=
+            BOOST_CHECK(limit_order_idx.find(std::make_tuple("alice", 5)) !=
                           limit_order_idx.end());
 
             tx.operations.clear();
             tx.signatures.clear();
             tx.operations.push_back(op);
             tx.sign(alice_private_key, db->get_chain_id());
-            db->push_transaction(tx, 0);
+            BOOST_CHECK_NO_THROW(db->push_transaction(tx, 0));
 
-            BOOST_REQUIRE(limit_order_idx.find(std::make_tuple("alice", 5)) ==
+            BOOST_CHECK(limit_order_idx.find(std::make_tuple("alice", 5)) ==
                           limit_order_idx.end());
-            BOOST_REQUIRE(alice.balance.amount.value ==
+            BOOST_CHECK_EQUAL(alice.balance.amount.value,
                           ASSET("10.000 GOLOS").amount.value);
-            BOOST_REQUIRE(alice.sbd_balance.amount.value ==
+            BOOST_CHECK_EQUAL(alice.sbd_balance.amount.value,
                           ASSET("0.000 GBG").amount.value);
         }
         FC_LOG_AND_RETHROW()
