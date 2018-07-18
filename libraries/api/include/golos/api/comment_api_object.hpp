@@ -46,8 +46,12 @@ namespace golos { namespace api {
 
         protocol::asset total_payout_value;
         protocol::asset curator_payout_value;
+        protocol::asset curator_gests_payout_value;
 
         share_type author_rewards;
+        protocol::asset author_gbg_payout_value;
+        protocol::asset author_golos_payout_value;
+        protocol::asset author_gests_payout_value;
 
         int32_t net_votes = 0;
 
@@ -73,7 +77,7 @@ FC_REFLECT(
     (id)(author)(permlink)(parent_author)(parent_permlink)(category)(title)(body)(json_metadata)(last_update)
     (created)(active)(last_payout)(depth)(children)(children_rshares2)(net_rshares)(abs_rshares)
     (vote_rshares)(children_abs_rshares)(cashout_time)(max_cashout_time)(total_vote_weight)
-    (reward_weight)(total_payout_value)(curator_payout_value)(author_rewards)(net_votes)
+    (reward_weight)(total_payout_value)(curator_payout_value)(curator_gests_payout_value)(author_rewards)(author_gbg_payout_value)(author_golos_payout_value)(author_gests_payout_value)(net_votes)
     (mode)(root_comment)(root_title)(max_accepted_payout)(percent_steem_dollars)(allow_replies)(allow_votes)
     (allow_curation_rewards)(beneficiaries))
 

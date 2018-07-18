@@ -2205,22 +2205,6 @@ namespace golos { namespace chain {
             }
         }
 
-        void database::adjust_total_payout(
-                const comment_object &cur,
-                const asset &sbd_created,
-                const asset &curator_sbd_value,
-                const asset &beneficiary_value
-        ) {
-            modify(cur, [&](comment_object &c) {
-                if (c.total_payout_value.symbol == sbd_created.symbol) {
-                    c.total_payout_value += sbd_created;
-                    c.beneficiary_payout_value += beneficiary_value;
-                    c.curator_payout_value += curator_sbd_value;
-                }
-            });
-            /// TODO: potentially modify author's total payout numbers as well
-        }
-
 /**
  *  This method will iterate through all comment_vote_objects and give them
  *  (max_rewards * weight) / c.total_vote_weight.
@@ -2272,6 +2256,10 @@ namespace golos { namespace chain {
 
         void database::cashout_comment_helper(const comment_object &comment) {
             try {
+                asset total_payout_value(0, SBD_SYMBOL);
+                asset curator_payout_value(0, SBD_SYMBOL);
+                asset beneficiary_payout_value(0, SBD_SYMBOL);
+                
                 if (comment.net_rshares > 0) {
                     uint128_t reward_tokens = uint128_t(
                          claim_rshare_reward(
@@ -2288,7 +2276,6 @@ namespace golos { namespace chain {
                         share_type author_tokens = reward_tokens.to_uint64() - curation_tokens;
 
                         author_tokens += pay_curators(comment, curation_tokens);
-
                         share_type total_beneficiary = 0;
 
                         for (auto &b : comment.beneficiaries) {
@@ -2311,29 +2298,16 @@ namespace golos { namespace chain {
                         auto vest_created = create_vesting(author, vesting_steem);
                         auto sbd_payout = create_sbd(author, sbd_steem);
 
-                        adjust_total_payout(
-                                comment,
-                                sbd_payout.first + to_sbd(sbd_payout.second + asset(vesting_steem, STEEM_SYMBOL)),
-                                to_sbd(asset(curation_tokens, STEEM_SYMBOL)),
-                                to_sbd(asset(total_beneficiary, STEEM_SYMBOL))
-                        );
-
-                        /*if( sbd_created.symbol == SBD_SYMBOL )
-                           adjust_total_payout( comment, sbd_created + to_sbd( asset( vesting_steem, STEEM_SYMBOL ) ), to_sbd( asset( reward_tokens.to_uint64() - author_tokens, STEEM_SYMBOL ) ) );
-                        else
-                           adjust_total_payout( comment, to_sbd( asset( vesting_steem + sbd_steem, STEEM_SYMBOL ) ), to_sbd( asset( reward_tokens.to_uint64() - author_tokens, STEEM_SYMBOL ) ) );
-                           */
+                        total_payout_value = sbd_payout.first + to_sbd(sbd_payout.second + asset(vesting_steem, STEEM_SYMBOL));
+                        curator_payout_value = to_sbd(asset(curation_tokens, STEEM_SYMBOL));
+                        beneficiary_payout_value = to_sbd(asset(total_beneficiary, STEEM_SYMBOL));
 
                         // stats only.. TODO: Move to plugin...
-                        total_payout = to_sbd(asset(reward_tokens.to_uint64(), STEEM_SYMBOL));
-
-                        push_virtual_operation(author_reward_operation(comment.author, to_string(comment.permlink), sbd_payout.first, sbd_payout.second, vest_created));
+                        total_payout = to_sbd(asset(reward_tokens.to_uint64(), STEEM_SYMBOL));  
+                        push_virtual_operation(author_reward_operation(comment.author, to_string(comment.permlink), sbd_payout.first, sbd_payout.second, vest_created, author_tokens));
                         push_virtual_operation(comment_reward_operation(comment.author, to_string(comment.permlink), total_payout));
 
 #ifndef IS_LOW_MEM
-                        modify(comment, [&](comment_object &c) {
-                            c.author_rewards += author_tokens;
-                        });
 
                         modify(get_account(comment.author), [&](account_object &a) {
                             a.posting_rewards += author_tokens;
@@ -2380,7 +2354,8 @@ namespace golos { namespace chain {
                     c.last_payout = head_block_time();
                 });
 
-                push_virtual_operation(comment_payout_update_operation(comment.author, to_string(comment.permlink)));
+                push_virtual_operation(comment_payout_update_operation(comment.author, to_string(comment.permlink),
+                    total_payout_value, curator_payout_value, beneficiary_payout_value));
 
                 const auto &vote_idx = get_index<comment_vote_index>().indices().get<by_comment_voter>();
                 auto vote_itr = vote_idx.lower_bound(comment.id);

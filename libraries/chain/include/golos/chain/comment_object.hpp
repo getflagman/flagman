@@ -87,13 +87,6 @@ namespace golos {
 
             uint16_t reward_weight = 0;
 
-            /** tracks the total payout this comment has received over time, measured in SBD */
-            asset total_payout_value = asset(0, SBD_SYMBOL);
-            asset curator_payout_value = asset(0, SBD_SYMBOL);
-            asset beneficiary_payout_value = asset(0, SBD_SYMBOL);
-
-            share_type author_rewards = 0;
-
             int32_t net_votes = 0;
 
             id_type root_comment;

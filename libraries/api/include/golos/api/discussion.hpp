@@ -17,6 +17,8 @@ namespace golos { namespace api {
 
         string url; /// /category/@rootauthor/root_permlink#author/permlink
         asset pending_payout_value = asset(0, SBD_SYMBOL); ///< sbd
+        asset pending_payout_gests_value = asset(0, VESTS_SYMBOL);
+        asset pending_payout_golos_value = asset(0, STEEM_SYMBOL);
         asset total_pending_payout_value = asset(0, SBD_SYMBOL); ///< sbd including replies
         std::vector<vote_state> active_votes;
         uint32_t active_votes_count = 0;
@@ -34,5 +36,5 @@ namespace golos { namespace api {
 } } // golos::api
 
 FC_REFLECT_DERIVED( (golos::api::discussion), ((golos::api::comment_api_object)),
-        (url)(pending_payout_value)(total_pending_payout_value)(active_votes)(active_votes_count)(replies)
+        (url)(pending_payout_value)(pending_payout_gests_value)(pending_payout_golos_value)(total_pending_payout_value)(active_votes)(active_votes_count)(replies)
         (author_reputation)(promoted)(body_length)(reblogged_by)(first_reblogged_by)(first_reblogged_on))
