@@ -400,13 +400,16 @@ namespace golos { namespace protocol {
         }
 
         void limit_order_create_operation::validate() const {
-            validate_account_name(owner);
-            FC_ASSERT((is_asset_type(amount_to_sell, STEEM_SYMBOL) &&
+            GOLOS_CHECK_PARAM(owner, validate_account_name(owner));
+            GOLOS_CHECK_LOGIC((is_asset_type(amount_to_sell, STEEM_SYMBOL) &&
                        is_asset_type(min_to_receive, SBD_SYMBOL))
                       || (is_asset_type(amount_to_sell, SBD_SYMBOL) &&
                           is_asset_type(min_to_receive, STEEM_SYMBOL)),
+                    logic_exception::limit_order_must_be_for_golos_gbg_market,
                     "Limit order must be for the GOLOS:GBG market");
-            (amount_to_sell / min_to_receive).validate();
+
+            auto price = (amount_to_sell / min_to_receive);
+            GOLOS_CHECK_PARAM(price, price.validate());
         }
 
         void limit_order_create2_operation::validate() const {

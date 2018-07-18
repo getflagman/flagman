@@ -30,8 +30,19 @@ namespace golos {
         void transaction::validate() const {
             FC_ASSERT(operations.size() >
                       0, "A transaction must have at least one operation", ("trx", *this));
+
+            uint32_t _current_op_in_trx = 0;
             for (const auto &op : operations) {
-                operation_validate(op);
+                try {
+                    operation_validate(op);
+                    ++_current_op_in_trx;
+                } catch (const fc::exception& e) {
+                    FC_THROW_EXCEPTION(tx_invalid_operation,
+                                    "Invalid operation ${index} in transaction: ${errmsg}",
+                                    ("index", _current_op_in_trx)
+                                    ("errmsg", e.to_string())
+                                    ("error", e));
+                } 
             }
         }
 

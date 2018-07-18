@@ -86,6 +86,11 @@ std::ostream& operator<<(std::ostream& out, const asset& v) {
     return out;
 }
 
+std::ostream& operator<<(std::ostream& out, const price& v) {
+    out << v.base << '/' << v.quote << '=' << v.to_real();
+    return out;
+}
+
 } } // namespace golos::protocol
 
 

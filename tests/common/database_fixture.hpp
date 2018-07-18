@@ -183,6 +183,23 @@ struct ErrorValidator<golos::missing_object> {
 };
 
 template<>
+struct ErrorValidator<golos::object_already_exist> {
+    void validate(const std::string& name, const fc::variant& props,
+            const std::string& type, const std::string& id) {
+        BOOST_CHECK_EQUAL(name, "object_already_exist");
+        BOOST_CHECK_EQUAL(props["type"].get_string(), type);
+        BOOST_CHECK_EQUAL(props["id"].get_string(), id);
+    }
+
+    void validate(const std::string& name, const fc::variant& props,
+            const std::string& type, const fc::variant_object& id) {
+        BOOST_CHECK_EQUAL(name, "object_already_exist");
+        BOOST_CHECK_EQUAL(props["type"].get_string(), type);
+        BOOST_CHECK_EQUAL(props["id"].get_object(), id);
+    }
+};
+
+template<>
 struct ErrorValidator<golos::logic_exception> {
     void validate(const std::string& name, const fc::variant& props,
             golos::logic_exception::error_types err) {
@@ -322,9 +339,22 @@ std::ostream& operator<<(std::ostream& out, const object_id<T> &v) {
 
 } // namespace chainbase
 
+
+namespace std {
+
+template<typename T1, typename T2>
+std::ostream& operator<<(std::ostream& out, const std::pair<T1,T2> &v) {
+    out << "<" << v.first << ":" << v.second << ">";
+    return out;
+}
+
+} // namespace std
+
+
 namespace golos { namespace protocol {
 
 std::ostream& operator<<(std::ostream& out, const asset& v);
+std::ostream& operator<<(std::ostream& out, const price& v);
 
 } } // namespace golos::protocol
 

@@ -1,4 +1,5 @@
 #include <golos/protocol/asset.hpp>
+#include <golos/protocol/exceptions.hpp>
 
 /*
 
@@ -194,9 +195,9 @@ namespace golos {
 
         void price::validate() const {
             try {
-                FC_ASSERT(base.amount > share_type(0));
-                FC_ASSERT(quote.amount > share_type(0));
-                FC_ASSERT(base.symbol_name() != quote.symbol_name());
+                GOLOS_CHECK_VALUE(base.amount > share_type(0), "Amount of base must be positive");
+                GOLOS_CHECK_VALUE(quote.amount > share_type(0), "Amount of quote must be positive");
+                GOLOS_CHECK_VALUE(base.symbol_name() != quote.symbol_name(), "Symbols of base and quote must be different");
             } FC_CAPTURE_AND_RETHROW((base)(quote))
         }
 

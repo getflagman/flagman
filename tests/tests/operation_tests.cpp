@@ -49,6 +49,11 @@ fc::variant_object make_comment_id(const std::string& author, const std::string&
     return fc::variant_object(res);
 }
 
+fc::variant_object make_limit_order_id(const std::string& author, uint32_t orderid) {
+    auto res = fc::mutable_variant_object()("account",author)("order_id",orderid);
+    return fc::variant_object(res);
+}
+
 
 BOOST_FIXTURE_TEST_SUITE(operation_tests, clean_database_fixture)
 
@@ -2693,6 +2698,35 @@ BOOST_FIXTURE_TEST_SUITE(operation_tests, clean_database_fixture)
     BOOST_AUTO_TEST_CASE(limit_order_create_validate) {
         try {
             BOOST_TEST_MESSAGE("Testing: limit_order_create_validate");
+            limit_order_create_operation op;
+
+            BOOST_TEST_MESSAGE("--- success on valid parameters");
+            op.owner = "alice";
+            op.amount_to_sell = ASSET("1.000 GOLOS");
+            op.min_to_receive = ASSET("1.000 GBG");
+            BOOST_CHECK_NO_THROW(op.validate());
+
+            BOOST_TEST_MESSAGE("--- failed when 'owner' is empty");
+            op.owner = "";
+            GOLOS_CHECK_ERROR_PROPS(op.validate(),
+                CHECK_ERROR(invalid_parameter, "owner"));
+
+            BOOST_TEST_MESSAGE("--- failed when 'amount_to_sell' is negative");
+            op.owner = "alice";
+            op.amount_to_sell = ASSET("-1.000 GOLOS");
+            GOLOS_CHECK_ERROR_PROPS(op.validate(),
+                CHECK_ERROR(invalid_parameter, "price"));
+
+            BOOST_TEST_MESSAGE("--- failed when 'min_to_receive' is negative");
+            op.amount_to_sell = ASSET("1.000 GOLOS");
+            op.min_to_receive = ASSET("-1.000 GBG");
+            GOLOS_CHECK_ERROR_PROPS(op.validate(),
+                CHECK_ERROR(invalid_parameter, "price"));
+
+            BOOST_TEST_MESSAGE("--- failed when symbol not GBG or GOLOS");
+            op.min_to_receive = ASSET("1.000000 GESTS");
+            GOLOS_CHECK_ERROR_PROPS(op.validate(),
+                CHECK_ERROR(logic_exception, logic_exception::limit_order_must_be_for_golos_gbg_market));
         }
         FC_LOG_AND_RETHROW()
     }
@@ -2715,7 +2749,8 @@ BOOST_FIXTURE_TEST_SUITE(operation_tests, clean_database_fixture)
                     db->head_block_time() + STEEMIT_MAX_TIME_UNTIL_EXPIRATION);
 
             BOOST_TEST_MESSAGE("--- Test failure when no signature.");
-            STEEMIT_REQUIRE_THROW(db->push_transaction(tx, database::skip_transaction_dupe_check), tx_missing_active_auth);
+            GOLOS_CHECK_ERROR_PROPS(db->push_transaction(tx, database::skip_transaction_dupe_check), 
+                CHECK_ERROR(tx_missing_active_auth, 0));
 
             BOOST_TEST_MESSAGE("--- Test success with account signature");
             tx.sign(alice_private_key, db->get_chain_id());
@@ -2723,18 +2758,21 @@ BOOST_FIXTURE_TEST_SUITE(operation_tests, clean_database_fixture)
 
             BOOST_TEST_MESSAGE("--- Test failure with duplicate signature");
             tx.sign(alice_private_key, db->get_chain_id());
-            STEEMIT_REQUIRE_THROW(db->push_transaction(tx, database::skip_transaction_dupe_check), tx_duplicate_sig);
+            GOLOS_CHECK_ERROR_PROPS(db->push_transaction(tx, database::skip_transaction_dupe_check), 
+                CHECK_ERROR(tx_duplicate_sig, 0));
 
             BOOST_TEST_MESSAGE("--- Test failure with additional incorrect signature");
             tx.signatures.clear();
             tx.sign(alice_private_key, db->get_chain_id());
             tx.sign(bob_private_key, db->get_chain_id());
-            STEEMIT_REQUIRE_THROW(db->push_transaction(tx, database::skip_transaction_dupe_check), tx_irrelevant_sig);
+            GOLOS_CHECK_ERROR_PROPS(db->push_transaction(tx, database::skip_transaction_dupe_check), 
+                CHECK_ERROR(tx_irrelevant_sig, 0));
 
             BOOST_TEST_MESSAGE("--- Test failure with incorrect signature");
             tx.signatures.clear();
             tx.sign(alice_post_key, db->get_chain_id());
-            STEEMIT_REQUIRE_THROW(db->push_transaction(tx, database::skip_transaction_dupe_check), tx_missing_active_auth);
+            GOLOS_CHECK_ERROR_PROPS(db->push_transaction(tx, database::skip_transaction_dupe_check), 
+                CHECK_ERROR(tx_missing_active_auth, 0));
 
             validate_database();
         }
@@ -2766,13 +2804,15 @@ BOOST_FIXTURE_TEST_SUITE(operation_tests, clean_database_fixture)
             tx.operations.push_back(op);
             tx.set_expiration(db->head_block_time() + STEEMIT_MAX_TIME_UNTIL_EXPIRATION);
             tx.sign(bob_private_key, db->get_chain_id());
-            STEEMIT_REQUIRE_THROW(db->push_transaction(tx, 0), fc::exception);
+            GOLOS_CHECK_ERROR_PROPS(db->push_transaction(tx, 0),
+                CHECK_ERROR(tx_invalid_operation, 0,
+                    CHECK_ERROR(insufficient_funds, "bob", "fund", "10.000 GOLOS")));
 
-            BOOST_REQUIRE(
+            BOOST_CHECK(
                     limit_order_idx.find(std::make_tuple("bob", op.orderid)) ==
                     limit_order_idx.end());
-            BOOST_REQUIRE(bob.balance.amount.value == ASSET("0.000 GOLOS").amount.value);
-            BOOST_REQUIRE(bob.sbd_balance.amount.value == ASSET("100.0000 GBG").amount.value);
+            BOOST_CHECK_EQUAL(bob.balance.amount.value, ASSET("0.000 GOLOS").amount.value);
+            BOOST_CHECK_EQUAL(bob.sbd_balance.amount.value, ASSET("100.0000 GBG").amount.value);
             validate_database();
 
             BOOST_TEST_MESSAGE("--- Test failure when amount to receive is 0");
@@ -2783,13 +2823,15 @@ BOOST_FIXTURE_TEST_SUITE(operation_tests, clean_database_fixture)
             tx.signatures.clear();
             tx.operations.push_back(op);
             tx.sign(alice_private_key, db->get_chain_id());
-            STEEMIT_REQUIRE_THROW(db->push_transaction(tx, 0), fc::exception);
+            GOLOS_CHECK_ERROR_PROPS(db->push_transaction(tx, 0),
+                CHECK_ERROR(tx_invalid_operation, 0,
+                    CHECK_ERROR(invalid_parameter, "price")));
 
-            BOOST_REQUIRE(
+            BOOST_CHECK(
                     limit_order_idx.find(std::make_tuple("alice", op.orderid)) ==
                     limit_order_idx.end());
-            BOOST_REQUIRE(alice.balance.amount.value == ASSET("1000.000 GOLOS").amount.value);
-            BOOST_REQUIRE(alice.sbd_balance.amount.value == ASSET("0.000 GBG").amount.value);
+            BOOST_CHECK_EQUAL(alice.balance.amount.value, ASSET("1000.000 GOLOS").amount.value);
+            BOOST_CHECK_EQUAL(alice.sbd_balance.amount.value, ASSET("0.000 GBG").amount.value);
             validate_database();
 
             BOOST_TEST_MESSAGE("--- Test failure when amount to sell is 0");
@@ -2800,13 +2842,15 @@ BOOST_FIXTURE_TEST_SUITE(operation_tests, clean_database_fixture)
             tx.signatures.clear();
             tx.operations.push_back(op);
             tx.sign(alice_private_key, db->get_chain_id());
-            STEEMIT_REQUIRE_THROW(db->push_transaction(tx, 0), fc::exception);
+            GOLOS_CHECK_ERROR_PROPS(db->push_transaction(tx, 0),
+                CHECK_ERROR(tx_invalid_operation, 0,
+                    CHECK_ERROR(invalid_parameter, "price")));
 
-            BOOST_REQUIRE(
+            BOOST_CHECK(
                     limit_order_idx.find(std::make_tuple("alice", op.orderid)) ==
                     limit_order_idx.end());
-            BOOST_REQUIRE(alice.balance.amount.value == ASSET("1000.000 GOLOS").amount.value);
-            BOOST_REQUIRE(alice.sbd_balance.amount.value == ASSET("0.000 GBG").amount.value);
+            BOOST_CHECK_EQUAL(alice.balance.amount.value, ASSET("1000.000 GOLOS").amount.value);
+            BOOST_CHECK_EQUAL(alice.sbd_balance.amount.value, ASSET("0.000 GBG").amount.value);
             validate_database();
 
             BOOST_TEST_MESSAGE("--- Test success creating limit order that will not be filled");
@@ -2817,19 +2861,19 @@ BOOST_FIXTURE_TEST_SUITE(operation_tests, clean_database_fixture)
             tx.signatures.clear();
             tx.operations.push_back(op);
             tx.sign(alice_private_key, db->get_chain_id());
-            db->push_transaction(tx, 0);
+            BOOST_CHECK_NO_THROW(db->push_transaction(tx, 0));
 
             auto limit_order = limit_order_idx.find(std::make_tuple("alice", op.orderid));
-            BOOST_REQUIRE(limit_order != limit_order_idx.end());
-            BOOST_REQUIRE(limit_order->seller == op.owner);
-            BOOST_REQUIRE(limit_order->orderid == op.orderid);
-            BOOST_REQUIRE(limit_order->for_sale == op.amount_to_sell.amount);
-            BOOST_REQUIRE(limit_order->sell_price ==
+            BOOST_CHECK(limit_order != limit_order_idx.end());
+            BOOST_CHECK_EQUAL(limit_order->seller, op.owner);
+            BOOST_CHECK_EQUAL(limit_order->orderid, op.orderid);
+            BOOST_CHECK_EQUAL(limit_order->for_sale, op.amount_to_sell.amount);
+            BOOST_CHECK_EQUAL(limit_order->sell_price,
                           price(op.amount_to_sell / op.min_to_receive));
-            BOOST_REQUIRE(limit_order->get_market() ==
+            BOOST_CHECK_EQUAL(limit_order->get_market(),
                           std::make_pair(SBD_SYMBOL, STEEM_SYMBOL));
-            BOOST_REQUIRE(alice.balance.amount.value == ASSET("990.000 GOLOS").amount.value);
-            BOOST_REQUIRE(alice.sbd_balance.amount.value == ASSET("0.000 GBG").amount.value);
+            BOOST_CHECK_EQUAL(alice.balance.amount.value, ASSET("990.000 GOLOS").amount.value);
+            BOOST_CHECK_EQUAL(alice.sbd_balance.amount.value, ASSET("0.000 GBG").amount.value);
             validate_database();
 
             BOOST_TEST_MESSAGE("--- Test failure creating limit order with duplicate id");
@@ -2839,18 +2883,20 @@ BOOST_FIXTURE_TEST_SUITE(operation_tests, clean_database_fixture)
             tx.signatures.clear();
             tx.operations.push_back(op);
             tx.sign(alice_private_key, db->get_chain_id());
-            STEEMIT_REQUIRE_THROW(db->push_transaction(tx, 0), fc::exception);
+            GOLOS_CHECK_ERROR_PROPS(db->push_transaction(tx, 0),
+                CHECK_ERROR(tx_invalid_operation, 0,
+                    CHECK_ERROR(object_already_exist, "limit_order", make_limit_order_id("alice", 1))));
 
             limit_order = limit_order_idx.find(std::make_tuple("alice", op.orderid));
-            BOOST_REQUIRE(limit_order != limit_order_idx.end());
-            BOOST_REQUIRE(limit_order->seller == op.owner);
-            BOOST_REQUIRE(limit_order->orderid == op.orderid);
-            BOOST_REQUIRE(limit_order->for_sale == 10000);
-            BOOST_REQUIRE(limit_order->sell_price ==
+            BOOST_CHECK(limit_order != limit_order_idx.end());
+            BOOST_CHECK_EQUAL(limit_order->seller, op.owner);
+            BOOST_CHECK_EQUAL(limit_order->orderid, op.orderid);
+            BOOST_CHECK_EQUAL(limit_order->for_sale, 10000);
+            BOOST_CHECK_EQUAL(limit_order->sell_price,
                           price(ASSET("10.000 GOLOS"), op.min_to_receive));
-            BOOST_REQUIRE(limit_order->get_market() == std::make_pair(SBD_SYMBOL, STEEM_SYMBOL));
-            BOOST_REQUIRE(alice.balance.amount.value == ASSET("990.000 GOLOS").amount.value);
-            BOOST_REQUIRE(alice.sbd_balance.amount.value == ASSET("0.000 GBG").amount.value);
+            BOOST_CHECK_EQUAL(limit_order->get_market(), std::make_pair(SBD_SYMBOL, STEEM_SYMBOL));
+            BOOST_CHECK_EQUAL(alice.balance.amount.value, ASSET("990.000 GOLOS").amount.value);
+            BOOST_CHECK_EQUAL(alice.sbd_balance.amount.value, ASSET("0.000 GBG").amount.value);
             validate_database();
 
             BOOST_TEST_MESSAGE("--- Test sucess killing an order that will not be filled");
@@ -2861,13 +2907,15 @@ BOOST_FIXTURE_TEST_SUITE(operation_tests, clean_database_fixture)
             tx.signatures.clear();
             tx.operations.push_back(op);
             tx.sign(alice_private_key, db->get_chain_id());
-            STEEMIT_REQUIRE_THROW(db->push_transaction(tx, 0), fc::exception);
+            GOLOS_CHECK_ERROR_PROPS(db->push_transaction(tx, 0),
+                CHECK_ERROR(tx_invalid_operation, 0,
+                    CHECK_ERROR(logic_exception, logic_exception::cancelling_not_filled_order)));
 
-            BOOST_REQUIRE(
+            BOOST_CHECK(
                     limit_order_idx.find(std::make_tuple("alice", op.orderid)) ==
                     limit_order_idx.end());
-            BOOST_REQUIRE(alice.balance.amount.value == ASSET("990.000 GOLOS").amount.value);
-            BOOST_REQUIRE(alice.sbd_balance.amount.value == ASSET("0.000 GBG").amount.value);
+            BOOST_CHECK_EQUAL(alice.balance.amount.value, ASSET("990.000 GOLOS").amount.value);
+            BOOST_CHECK_EQUAL(alice.sbd_balance.amount.value, ASSET("0.000 GBG").amount.value);
             validate_database();
 
             BOOST_TEST_MESSAGE("--- Test having a partial match to limit order");
@@ -2883,38 +2931,38 @@ BOOST_FIXTURE_TEST_SUITE(operation_tests, clean_database_fixture)
             tx.signatures.clear();
             tx.operations.push_back(op);
             tx.sign(bob_private_key, db->get_chain_id());
-            db->push_transaction(tx, 0);
+            BOOST_CHECK_NO_THROW(db->push_transaction(tx, 0));
 
             auto recent_ops = get_last_operations(1);
             auto fill_order_op = recent_ops[0].get<fill_order_operation>();
 
             limit_order = limit_order_idx.find(std::make_tuple("alice", 1));
-            BOOST_REQUIRE(limit_order != limit_order_idx.end());
-            BOOST_REQUIRE(limit_order->seller == "alice");
-            BOOST_REQUIRE(limit_order->orderid == op.orderid);
-            BOOST_REQUIRE(limit_order->for_sale == 5000);
-            BOOST_REQUIRE(limit_order->sell_price ==
+            BOOST_CHECK(limit_order != limit_order_idx.end());
+            BOOST_CHECK_EQUAL(limit_order->seller, "alice");
+            BOOST_CHECK_EQUAL(limit_order->orderid, op.orderid);
+            BOOST_CHECK_EQUAL(limit_order->for_sale, 5000);
+            BOOST_CHECK_EQUAL(limit_order->sell_price,
                           price(ASSET("10.000 GOLOS"), ASSET("15.000 GBG")));
-            BOOST_REQUIRE(limit_order->get_market() ==
+            BOOST_CHECK_EQUAL(limit_order->get_market(),
                           std::make_pair(SBD_SYMBOL, STEEM_SYMBOL));
-            BOOST_REQUIRE(
+            BOOST_CHECK(
                     limit_order_idx.find(std::make_tuple("bob", op.orderid)) ==
                     limit_order_idx.end());
-            BOOST_REQUIRE(alice.balance.amount.value ==
+            BOOST_CHECK_EQUAL(alice.balance.amount.value,
                           ASSET("990.000 GOLOS").amount.value);
-            BOOST_REQUIRE(alice.sbd_balance.amount.value ==
+            BOOST_CHECK_EQUAL(alice.sbd_balance.amount.value,
                           ASSET("7.500 GBG").amount.value);
-            BOOST_REQUIRE(bob.balance.amount.value ==
+            BOOST_CHECK_EQUAL(bob.balance.amount.value,
                           ASSET("5.000 GOLOS").amount.value);
-            BOOST_REQUIRE(bob.sbd_balance.amount.value ==
+            BOOST_CHECK_EQUAL(bob.sbd_balance.amount.value,
                           ASSET("992.500 GBG").amount.value);
-            BOOST_REQUIRE(fill_order_op.open_owner == "alice");
-            BOOST_REQUIRE(fill_order_op.open_orderid == 1);
-            BOOST_REQUIRE(fill_order_op.open_pays.amount.value ==
+            BOOST_CHECK_EQUAL(fill_order_op.open_owner, "alice");
+            BOOST_CHECK_EQUAL(fill_order_op.open_orderid, 1);
+            BOOST_CHECK_EQUAL(fill_order_op.open_pays.amount.value,
                           ASSET("5.000 GOLOS").amount.value);
-            BOOST_REQUIRE(fill_order_op.current_owner == "bob");
-            BOOST_REQUIRE(fill_order_op.current_orderid == 1);
-            BOOST_REQUIRE(fill_order_op.current_pays.amount.value ==
+            BOOST_CHECK_EQUAL(fill_order_op.current_owner, "bob");
+            BOOST_CHECK_EQUAL(fill_order_op.current_orderid, 1);
+            BOOST_CHECK_EQUAL(fill_order_op.current_pays.amount.value,
                           ASSET("7.500 GBG").amount.value);
             validate_database();
 
@@ -2926,26 +2974,26 @@ BOOST_FIXTURE_TEST_SUITE(operation_tests, clean_database_fixture)
             tx.signatures.clear();
             tx.operations.push_back(op);
             tx.sign(bob_private_key, db->get_chain_id());
-            db->push_transaction(tx, 0);
+            BOOST_CHECK_NO_THROW(db->push_transaction(tx, 0));
 
             limit_order = limit_order_idx.find(std::make_tuple("bob", 1));
-            BOOST_REQUIRE(limit_order != limit_order_idx.end());
-            BOOST_REQUIRE(limit_order->seller == "bob");
-            BOOST_REQUIRE(limit_order->orderid == 1);
-            BOOST_REQUIRE(limit_order->for_sale.value == 7500);
-            BOOST_REQUIRE(limit_order->sell_price ==
+            BOOST_CHECK(limit_order != limit_order_idx.end());
+            BOOST_CHECK_EQUAL(limit_order->seller, "bob");
+            BOOST_CHECK_EQUAL(limit_order->orderid, 1);
+            BOOST_CHECK_EQUAL(limit_order->for_sale.value, 7500);
+            BOOST_CHECK_EQUAL(limit_order->sell_price,
                           price(ASSET("15.000 GBG"), ASSET("10.000 GOLOS")));
-            BOOST_REQUIRE(limit_order->get_market() ==
+            BOOST_CHECK_EQUAL(limit_order->get_market(),
                           std::make_pair(SBD_SYMBOL, STEEM_SYMBOL));
-            BOOST_REQUIRE(limit_order_idx.find(std::make_tuple("alice", 1)) ==
+            BOOST_CHECK(limit_order_idx.find(std::make_tuple("alice", 1)) ==
                           limit_order_idx.end());
-            BOOST_REQUIRE(alice.balance.amount.value ==
+            BOOST_CHECK_EQUAL(alice.balance.amount.value,
                           ASSET("990.000 GOLOS").amount.value);
-            BOOST_REQUIRE(alice.sbd_balance.amount.value ==
+            BOOST_CHECK_EQUAL(alice.sbd_balance.amount.value,
                           ASSET("15.000 GBG").amount.value);
-            BOOST_REQUIRE(bob.balance.amount.value ==
+            BOOST_CHECK_EQUAL(bob.balance.amount.value,
                           ASSET("10.000 GOLOS").amount.value);
-            BOOST_REQUIRE(bob.sbd_balance.amount.value ==
+            BOOST_CHECK_EQUAL(bob.sbd_balance.amount.value,
                           ASSET("977.500 GBG").amount.value);
             validate_database();
 
@@ -2959,19 +3007,19 @@ BOOST_FIXTURE_TEST_SUITE(operation_tests, clean_database_fixture)
             tx.signatures.clear();
             tx.operations.push_back(op);
             tx.sign(alice_private_key, db->get_chain_id());
-            db->push_transaction(tx, 0);
+            GOLOS_CHECK_NO_THROW(db->push_transaction(tx, 0));
 
-            BOOST_REQUIRE(limit_order_idx.find(std::make_tuple("alice", 3)) ==
+            BOOST_CHECK(limit_order_idx.find(std::make_tuple("alice", 3)) ==
                           limit_order_idx.end());
-            BOOST_REQUIRE(limit_order_idx.find(std::make_tuple("bob", 1)) ==
+            BOOST_CHECK(limit_order_idx.find(std::make_tuple("bob", 1)) ==
                           limit_order_idx.end());
-            BOOST_REQUIRE(alice.balance.amount.value ==
+            BOOST_CHECK_EQUAL(alice.balance.amount.value,
                           ASSET("985.000 GOLOS").amount.value);
-            BOOST_REQUIRE(alice.sbd_balance.amount.value ==
+            BOOST_CHECK_EQUAL(alice.sbd_balance.amount.value,
                           ASSET("22.500 GBG").amount.value);
-            BOOST_REQUIRE(bob.balance.amount.value ==
+            BOOST_CHECK_EQUAL(bob.balance.amount.value,
                           ASSET("15.000 GOLOS").amount.value);
-            BOOST_REQUIRE(bob.sbd_balance.amount.value ==
+            BOOST_CHECK_EQUAL(bob.sbd_balance.amount.value,
                           ASSET("977.500 GBG").amount.value);
             validate_database();
 
@@ -2985,7 +3033,7 @@ BOOST_FIXTURE_TEST_SUITE(operation_tests, clean_database_fixture)
             tx.signatures.clear();
             tx.operations.push_back(op);
             tx.sign(alice_private_key, db->get_chain_id());
-            db->push_transaction(tx, 0);
+            BOOST_CHECK_NO_THROW(db->push_transaction(tx, 0));
 
             op.owner = "bob";
             op.orderid = 4;
@@ -2995,26 +3043,26 @@ BOOST_FIXTURE_TEST_SUITE(operation_tests, clean_database_fixture)
             tx.signatures.clear();
             tx.operations.push_back(op);
             tx.sign(bob_private_key, db->get_chain_id());
-            db->push_transaction(tx, 0);
+            BOOST_CHECK_NO_THROW(db->push_transaction(tx, 0));
 
             limit_order = limit_order_idx.find(std::make_tuple("bob", 4));
-            BOOST_REQUIRE(limit_order != limit_order_idx.end());
-            BOOST_REQUIRE(limit_order_idx.find(std::make_tuple("alice", 4)) ==
+            BOOST_CHECK(limit_order != limit_order_idx.end());
+            BOOST_CHECK(limit_order_idx.find(std::make_tuple("alice", 4)) ==
                           limit_order_idx.end());
-            BOOST_REQUIRE(limit_order->seller == "bob");
-            BOOST_REQUIRE(limit_order->orderid == 4);
-            BOOST_REQUIRE(limit_order->for_sale.value == 1000);
-            BOOST_REQUIRE(limit_order->sell_price ==
+            BOOST_CHECK_EQUAL(limit_order->seller, "bob");
+            BOOST_CHECK_EQUAL(limit_order->orderid, 4);
+            BOOST_CHECK_EQUAL(limit_order->for_sale.value, 1000);
+            BOOST_CHECK_EQUAL(limit_order->sell_price,
                           price(ASSET("12.000 GBG"), ASSET("10.000 GOLOS")));
-            BOOST_REQUIRE(limit_order->get_market() ==
+            BOOST_CHECK_EQUAL(limit_order->get_market(),
                           std::make_pair(SBD_SYMBOL, STEEM_SYMBOL));
-            BOOST_REQUIRE(alice.balance.amount.value ==
+            BOOST_CHECK_EQUAL(alice.balance.amount.value,
                           ASSET("975.000 GOLOS").amount.value);
-            BOOST_REQUIRE(alice.sbd_balance.amount.value ==
+            BOOST_CHECK_EQUAL(alice.sbd_balance.amount.value,
                           ASSET("33.500 GBG").amount.value);
-            BOOST_REQUIRE(bob.balance.amount.value ==
+            BOOST_CHECK_EQUAL(bob.balance.amount.value,
                           ASSET("25.000 GOLOS").amount.value);
-            BOOST_REQUIRE(bob.sbd_balance.amount.value ==
+            BOOST_CHECK_EQUAL(bob.sbd_balance.amount.value,
                           ASSET("965.500 GBG").amount.value);
             validate_database();
 
@@ -3025,7 +3073,7 @@ BOOST_FIXTURE_TEST_SUITE(operation_tests, clean_database_fixture)
             tx.signatures.clear();
             tx.operations.push_back(can);
             tx.sign(bob_private_key, db->get_chain_id());
-            db->push_transaction(tx, 0);
+            BOOST_CHECK_NO_THROW(db->push_transaction(tx, 0));
 
             BOOST_TEST_MESSAGE("--- Test filling limit order with better order when partial order is worse.");
 
@@ -3037,7 +3085,7 @@ BOOST_FIXTURE_TEST_SUITE(operation_tests, clean_database_fixture)
             tx.signatures.clear();
             tx.operations.push_back(op);
             tx.sign(alice_private_key, db->get_chain_id());
-            db->push_transaction(tx, 0);
+            BOOST_CHECK_NO_THROW(db->push_transaction(tx, 0));
 
             op.owner = "bob";
             op.orderid = 5;
@@ -3047,26 +3095,25 @@ BOOST_FIXTURE_TEST_SUITE(operation_tests, clean_database_fixture)
             tx.signatures.clear();
             tx.operations.push_back(op);
             tx.sign(bob_private_key, db->get_chain_id());
-            db->push_transaction(tx, 0);
+            BOOST_CHECK_NO_THROW(db->push_transaction(tx, 0));
 
             limit_order = limit_order_idx.find(std::make_tuple("alice", 5));
-            BOOST_REQUIRE(limit_order != limit_order_idx.end());
-            BOOST_REQUIRE(limit_order_idx.find(std::make_tuple("bob", 5)) ==
-                          limit_order_idx.end());
-            BOOST_REQUIRE(limit_order->seller == "alice");
-            BOOST_REQUIRE(limit_order->orderid == 5);
-            BOOST_REQUIRE(limit_order->for_sale.value == 9091);
-            BOOST_REQUIRE(limit_order->sell_price ==
+            BOOST_CHECK(limit_order != limit_order_idx.end());
+            BOOST_CHECK(limit_order_idx.find(std::make_tuple("bob", 5)) == limit_order_idx.end());
+            BOOST_CHECK_EQUAL(limit_order->seller, "alice");
+            BOOST_CHECK_EQUAL(limit_order->orderid, 5);
+            BOOST_CHECK_EQUAL(limit_order->for_sale.value, 9091);
+            BOOST_CHECK_EQUAL(limit_order->sell_price,
                           price(ASSET("20.000 GOLOS"), ASSET("22.000 GBG")));
-            BOOST_REQUIRE(limit_order->get_market() ==
+            BOOST_CHECK_EQUAL(limit_order->get_market(),
                           std::make_pair(SBD_SYMBOL, STEEM_SYMBOL));
-            BOOST_REQUIRE(alice.balance.amount.value ==
+            BOOST_CHECK_EQUAL(alice.balance.amount.value,
                           ASSET("955.000 GOLOS").amount.value);
-            BOOST_REQUIRE(alice.sbd_balance.amount.value ==
+            BOOST_CHECK_EQUAL(alice.sbd_balance.amount.value,
                           ASSET("45.500 GBG").amount.value);
-            BOOST_REQUIRE(bob.balance.amount.value ==
+            BOOST_CHECK_EQUAL(bob.balance.amount.value,
                           ASSET("35.909 GOLOS").amount.value);
-            BOOST_REQUIRE(bob.sbd_balance.amount.value ==
+            BOOST_CHECK_EQUAL(bob.sbd_balance.amount.value,
                           ASSET("954.500 GBG").amount.value);
             validate_database();
         }
