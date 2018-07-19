@@ -2435,6 +2435,28 @@ BOOST_FIXTURE_TEST_SUITE(operation_tests, clean_database_fixture)
     BOOST_AUTO_TEST_CASE(feed_publish_validate) {
         try {
             BOOST_TEST_MESSAGE("Testing: feed_publish_validate");
+            feed_publish_operation op;
+
+            BOOST_TEST_MESSAGE("--- success on valid parameters");
+            op.publisher = "alice";
+            op.exchange_rate = price(ASSET("1.000 GOLOS"), ASSET("1.000 GBG"));
+            BOOST_CHECK_NO_THROW(op.validate());
+
+            BOOST_TEST_MESSAGE("--- failed when 'publisher' is empty");
+            op.publisher = "";
+            GOLOS_CHECK_ERROR_PROPS(op.validate(),
+                CHECK_ERROR(invalid_parameter, "publisher"));
+
+            BOOST_TEST_MESSAGE("--- failed when 'exchange_rate' not for GOLOS/GBG market");
+            op.publisher = "alice";
+            op.exchange_rate = price(ASSET("1.000000 GESTS"), ASSET("1.000 GBG"));
+            GOLOS_CHECK_ERROR_PROPS(op.validate(),
+                CHECK_ERROR(logic_exception, logic_exception::price_feed_must_be_for_golos_gbg_market));
+
+            BOOST_TEST_MESSAGE("--- failed when 'exchange_rate' is invalid");
+            op.exchange_rate = price(ASSET("0.000 GOLOS"), ASSET("1.000 GBG"));
+            GOLOS_CHECK_ERROR_PROPS(op.validate(),
+                CHECK_ERROR(invalid_parameter, "exchange_rate"));
         }
         FC_LOG_AND_RETHROW()
     }
@@ -2456,28 +2478,32 @@ BOOST_FIXTURE_TEST_SUITE(operation_tests, clean_database_fixture)
             tx.set_expiration(db->head_block_time() + STEEMIT_MAX_TIME_UNTIL_EXPIRATION);
 
             BOOST_TEST_MESSAGE("--- Test failure when no signature.");
-            STEEMIT_REQUIRE_THROW(db->push_transaction(tx, database::skip_transaction_dupe_check), tx_missing_active_auth);
+            GOLOS_CHECK_ERROR_PROPS(db->push_transaction(tx, database::skip_transaction_dupe_check), 
+                CHECK_ERROR(tx_missing_active_auth, 0));
 
             BOOST_TEST_MESSAGE("--- Test failure with incorrect signature");
             tx.signatures.clear();
             tx.sign(alice_post_key, db->get_chain_id());
-            STEEMIT_REQUIRE_THROW(db->push_transaction(tx, database::skip_transaction_dupe_check), tx_missing_active_auth);
+            GOLOS_CHECK_ERROR_PROPS(db->push_transaction(tx, database::skip_transaction_dupe_check), 
+                CHECK_ERROR(tx_missing_active_auth, 0));
 
             BOOST_TEST_MESSAGE("--- Test failure with duplicate signature");
             tx.sign(alice_private_key, db->get_chain_id());
             tx.sign(alice_private_key, db->get_chain_id());
-            STEEMIT_REQUIRE_THROW(db->push_transaction(tx, database::skip_transaction_dupe_check), tx_duplicate_sig);
+            GOLOS_CHECK_ERROR_PROPS(db->push_transaction(tx, database::skip_transaction_dupe_check), 
+                CHECK_ERROR(tx_duplicate_sig, 0));
 
             BOOST_TEST_MESSAGE("--- Test failure with additional incorrect signature");
             tx.signatures.clear();
             tx.sign(alice_private_key, db->get_chain_id());
             tx.sign(bob_private_key, db->get_chain_id());
-            STEEMIT_REQUIRE_THROW(db->push_transaction(tx, database::skip_transaction_dupe_check), tx_irrelevant_sig);
+            GOLOS_CHECK_ERROR_PROPS(db->push_transaction(tx, database::skip_transaction_dupe_check), 
+                CHECK_ERROR(tx_irrelevant_sig, 0));
 
             BOOST_TEST_MESSAGE("--- Test success with witness account signature");
             tx.signatures.clear();
             tx.sign(alice_private_key, db->get_chain_id());
-            db->push_transaction(tx, database::skip_transaction_dupe_check);
+            BOOST_CHECK_NO_THROW(db->push_transaction(tx, database::skip_transaction_dupe_check));
 
             validate_database();
         }
@@ -2502,12 +2528,12 @@ BOOST_FIXTURE_TEST_SUITE(operation_tests, clean_database_fixture)
             tx.operations.push_back(op);
             tx.sign(alice_private_key, db->get_chain_id());
 
-            db->push_transaction(tx, 0);
+            BOOST_CHECK_NO_THROW(db->push_transaction(tx, 0));
 
             witness_object &alice_witness = const_cast< witness_object & >( db->get_witness("alice"));
 
-            BOOST_REQUIRE(alice_witness.sbd_exchange_rate == op.exchange_rate);
-            BOOST_REQUIRE(alice_witness.last_sbd_exchange_update == db->head_block_time());
+            BOOST_CHECK_EQUAL(alice_witness.sbd_exchange_rate, op.exchange_rate);
+            BOOST_CHECK_EQUAL(alice_witness.last_sbd_exchange_update, db->head_block_time());
             validate_database();
 
             BOOST_TEST_MESSAGE("--- Test failure publishing to non-existent witness");
@@ -2515,9 +2541,12 @@ BOOST_FIXTURE_TEST_SUITE(operation_tests, clean_database_fixture)
             tx.operations.clear();
             tx.signatures.clear();
             op.publisher = "bob";
+            tx.operations.push_back(op);
             tx.sign(alice_private_key, db->get_chain_id());
 
-            STEEMIT_REQUIRE_THROW(db->push_transaction(tx, 0), fc::exception);
+            // In this case missing_object thrown at authority checking step
+            GOLOS_CHECK_ERROR_PROPS(db->push_transaction(tx, 0),
+                CHECK_ERROR(missing_object, "authority", "bob"));
             validate_database();
 
             BOOST_TEST_MESSAGE("--- Test updating price feed");
@@ -2529,12 +2558,12 @@ BOOST_FIXTURE_TEST_SUITE(operation_tests, clean_database_fixture)
             tx.operations.push_back(op);
             tx.sign(alice_private_key, db->get_chain_id());
 
-            db->push_transaction(tx, 0);
+            BOOST_CHECK_NO_THROW(db->push_transaction(tx, 0));
 
             alice_witness = const_cast< witness_object & >( db->get_witness("alice"));
-            BOOST_REQUIRE(std::abs(alice_witness.sbd_exchange_rate.to_real() -
-                                   op.exchange_rate.to_real()) < 0.0000005);
-            BOOST_REQUIRE(alice_witness.last_sbd_exchange_update == db->head_block_time());
+            BOOST_CHECK_LT(std::abs(alice_witness.sbd_exchange_rate.to_real() -
+                                   op.exchange_rate.to_real()), 0.0000005);
+            BOOST_CHECK_EQUAL(alice_witness.last_sbd_exchange_update, db->head_block_time());
             validate_database();
         }
         FC_LOG_AND_RETHROW()

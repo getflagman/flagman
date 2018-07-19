@@ -390,13 +390,14 @@ namespace golos { namespace protocol {
         }
 
         void feed_publish_operation::validate() const {
-            validate_account_name(publisher);
-            FC_ASSERT((is_asset_type(exchange_rate.base, STEEM_SYMBOL) &&
+            GOLOS_CHECK_PARAM(publisher, validate_account_name(publisher));
+            GOLOS_CHECK_LOGIC((is_asset_type(exchange_rate.base, STEEM_SYMBOL) &&
                        is_asset_type(exchange_rate.quote, SBD_SYMBOL))
                       || (is_asset_type(exchange_rate.base, SBD_SYMBOL) &&
                           is_asset_type(exchange_rate.quote, STEEM_SYMBOL)),
+                    logic_exception::price_feed_must_be_for_golos_gbg_market,
                     "Price feed must be a GOLOS/GBG price");
-            exchange_rate.validate();
+            GOLOS_CHECK_PARAM(exchange_rate, exchange_rate.validate());
         }
 
         void limit_order_create_operation::validate() const {

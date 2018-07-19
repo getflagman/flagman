@@ -212,6 +212,7 @@ namespace golos {
 
             // limit order
             limit_order_must_be_for_golos_gbg_market,
+            price_feed_must_be_for_golos_gbg_market,
             cancelling_not_filled_order,
         };
     };
@@ -343,6 +344,7 @@ FC_REFLECT_ENUM(golos::logic_exception::error_types,
 
         // limit order
         (limit_order_must_be_for_golos_gbg_market)
+        (price_feed_must_be_for_golos_gbg_market)
         (cancelling_not_filled_order)
 );
 
