@@ -41,7 +41,58 @@ std::ostream &operator<<(std::ostream &out, const flat_set<T> &t) {
     return out;
 }
 
+template<typename T, typename... V>
+std::ostream &operator<<(std::ostream &out, const flat_map<T,V...> &t) {
+    out << "(";
+    if (!t.empty()) {
+        std::for_each(t.begin(), t.end()-1, 
+                [&](const typename flat_map<T,V...>::value_type& v) {
+                    out << v.first << ":" << v.second << ",";
+                });
+        auto last = *t.rbegin();
+        out << last.first << ":" << last.second;
+    }
+    out << ")";
+    return out;
+}
+
 } } // namespace boost::container
+
+
+namespace fc { namespace ecc {
+
+std::ostream &operator<<(std::ostream &out, const public_key &v) {
+    out << v.to_base58();
+    return out;
+}
+
+} } // namespace fc::ecc
+
+
+
+namespace golos { namespace protocol {
+
+std::ostream &operator<<(std::ostream &out, const public_key_type &v) {
+    out << std::string(v);
+    return out;
+}
+
+std::ostream &operator<<(std::ostream &out, const authority &v) {
+    out << v.weight_threshold << " / " << v.account_auths << " / " << v.key_auths;
+    return out;
+}
+
+} } // namespace golos::protocol
+
+
+namespace golos { namespace chain {
+
+std::ostream &operator<<(std::ostream &out, const shared_authority &v) {
+    out << static_cast<golos::protocol::authority>(v);
+    return out;
+}
+
+} } // namespace golos::chain
 
 
 fc::variant_object make_comment_id(const std::string& author, const std::string& permlink) {
@@ -64,6 +115,42 @@ BOOST_FIXTURE_TEST_SUITE(operation_tests, clean_database_fixture)
 
     BOOST_AUTO_TEST_CASE(account_create_validate) {
         try {
+            BOOST_TEST_MESSAGE("Testing: account_create_validate");
+            account_create_operation op;
+
+            private_key_type priv_key = generate_private_key("temp_key");
+
+            BOOST_TEST_MESSAGE("--- success on valid parameters");
+            op.fee = ASSET("10.000 GOLOS");
+            op.new_account_name = "bob";
+            op.creator = STEEMIT_INIT_MINER_NAME;
+            op.owner = authority(1, priv_key.get_public_key(), 1);
+            op.active = authority(2, priv_key.get_public_key(), 2);
+            op.memo_key = priv_key.get_public_key();
+            op.json_metadata = "{\"foo\":\"bar\"}";
+            BOOST_CHECK_NO_THROW(op.validate());
+
+            BOOST_TEST_MESSAGE("--- failed when 'new_account_name' is empty");
+            op.new_account_name = "";
+            GOLOS_CHECK_ERROR_PROPS(op.validate(),
+                CHECK_ERROR(invalid_parameter, "new_account_name"));
+
+            BOOST_TEST_MESSAGE("--- failed when 'fee' not in GOLOS");
+            op.new_account_name = "bob";
+            op.fee = ASSET("10.000 GBG");
+            GOLOS_CHECK_ERROR_PROPS(op.validate(),
+                CHECK_ERROR(invalid_parameter, "fee"));
+
+            BOOST_TEST_MESSAGE("--- failed when 'fee' is negative");
+            op.fee = ASSET("-10.000 GOLOS");
+            GOLOS_CHECK_ERROR_PROPS(op.validate(),
+                CHECK_ERROR(invalid_parameter, "fee"));
+
+            BOOST_TEST_MESSAGE("--- failed when 'json_metadata' is invalid");
+            op.fee = ASSET("10.000 GOLOS");
+            op.json_metadata = "[}";
+            GOLOS_CHECK_ERROR_PROPS(op.validate(),
+                CHECK_ERROR(invalid_parameter, "json_metadata"));
 
         }
         FC_LOG_AND_RETHROW()
@@ -91,11 +178,12 @@ BOOST_FIXTURE_TEST_SUITE(operation_tests, clean_database_fixture)
             tx.operations.push_back(op);
 
             BOOST_TEST_MESSAGE("--- Test failure when no signatures");
-            STEEMIT_REQUIRE_THROW(db->push_transaction(tx, 0), tx_missing_active_auth);
+            GOLOS_CHECK_ERROR_PROPS(db->push_transaction(tx, 0), 
+                CHECK_ERROR(tx_missing_active_auth, 0));
 
             BOOST_TEST_MESSAGE("--- Test success with witness signature");
             tx.sign(init_account_priv_key, db->get_chain_id());
-            db->push_transaction(tx, 0);
+            BOOST_CHECK_NO_THROW(db->push_transaction(tx, 0));
 
             BOOST_TEST_MESSAGE("--- Test failure when duplicate signatures");
             tx.operations.clear();
@@ -104,18 +192,21 @@ BOOST_FIXTURE_TEST_SUITE(operation_tests, clean_database_fixture)
             tx.operations.push_back(op);
             tx.sign(init_account_priv_key, db->get_chain_id());
             tx.sign(init_account_priv_key, db->get_chain_id());
-            STEEMIT_REQUIRE_THROW(db->push_transaction(tx, 0), tx_duplicate_sig);
+            GOLOS_CHECK_ERROR_PROPS(db->push_transaction(tx, 0), 
+                CHECK_ERROR(tx_duplicate_sig, 0));
 
             BOOST_TEST_MESSAGE("--- Test failure when signed by an additional signature not in the creator's authority");
             tx.signatures.clear();
             tx.sign(init_account_priv_key, db->get_chain_id());
             tx.sign(alice_private_key, db->get_chain_id());
-            STEEMIT_REQUIRE_THROW(db->push_transaction(tx, 0), tx_irrelevant_sig);
+            GOLOS_CHECK_ERROR_PROPS(db->push_transaction(tx, 0), 
+                CHECK_ERROR(tx_irrelevant_sig, 0));
 
             BOOST_TEST_MESSAGE("--- Test failure when signed by a signature not in the creator's authority");
             tx.signatures.clear();
             tx.sign(alice_private_key, db->get_chain_id());
-            STEEMIT_REQUIRE_THROW(db->push_transaction(tx, 0), tx_missing_active_auth);
+            GOLOS_CHECK_ERROR_PROPS(db->push_transaction(tx, 0), 
+                CHECK_ERROR(tx_missing_active_auth, 0));
             validate_database();
         }
         FC_LOG_AND_RETHROW()
@@ -148,7 +239,7 @@ BOOST_FIXTURE_TEST_SUITE(operation_tests, clean_database_fixture)
             tx.operations.push_back(op);
             tx.sign(init_account_priv_key, db->get_chain_id());
             tx.validate();
-            db->push_transaction(tx, 0);
+            BOOST_CHECK_NO_THROW(db->push_transaction(tx, 0));
 
             const account_object &acct = db->get_account("alice");
             const account_authority_object &acct_auth = db->get<account_authority_object, by_account>("alice");
@@ -156,46 +247,48 @@ BOOST_FIXTURE_TEST_SUITE(operation_tests, clean_database_fixture)
             auto vest_shares = gpo.total_vesting_shares;
             auto vests = gpo.total_vesting_fund_steem;
 
-            BOOST_REQUIRE(acct.name == "alice");
-            BOOST_REQUIRE(acct_auth.owner == authority(1, priv_key.get_public_key(), 1));
-            BOOST_REQUIRE(acct_auth.active == authority(2, priv_key.get_public_key(), 2));
-            BOOST_REQUIRE(acct.memo_key == priv_key.get_public_key());
-            BOOST_REQUIRE(acct.proxy == "");
-            BOOST_REQUIRE(acct.created == db->head_block_time());
-            BOOST_REQUIRE(acct.balance.amount.value == ASSET("0.000 GOLOS").amount.value);
-            BOOST_REQUIRE(acct.sbd_balance.amount.value == ASSET("0.000 GBG").amount.value);
-            BOOST_REQUIRE(acct.id._id == acct_auth.id._id);
+            BOOST_CHECK_EQUAL(acct.name, "alice");
+            BOOST_CHECK_EQUAL(acct_auth.owner, authority(1, priv_key.get_public_key(), 1));
+            BOOST_CHECK_EQUAL(acct_auth.active, authority(2, priv_key.get_public_key(), 2));
+            BOOST_CHECK_EQUAL(acct.memo_key, priv_key.get_public_key());
+            BOOST_CHECK_EQUAL(acct.proxy, "");
+            BOOST_CHECK_EQUAL(acct.created, db->head_block_time());
+            BOOST_CHECK_EQUAL(acct.balance.amount.value, ASSET("0.000 GOLOS").amount.value);
+            BOOST_CHECK_EQUAL(acct.sbd_balance.amount.value, ASSET("0.000 GBG").amount.value);
+            BOOST_CHECK_EQUAL(acct.id._id, acct_auth.id._id);
 
             /* This is being moved out of consensus...
       #ifndef IS_LOW_MEM
-         BOOST_REQUIRE( acct.json_metadata == op.json_metadata );
+         BOOST_CHECK_EQUAL( acct.json_metadata, op.json_metadata );
       #else
-         BOOST_REQUIRE( acct.json_metadata == "" );
+         BOOST_CHECK_EQUAL( acct.json_metadata, "" );
       #endif
       */
 
             /// because init_witness has created vesting shares and blocks have been produced, 100 STEEM is worth less than 100 vesting shares due to rounding
-            BOOST_REQUIRE(acct.vesting_shares.amount.value == (op.fee * (vest_shares / vests)).amount.value);
-            BOOST_REQUIRE(acct.vesting_withdraw_rate.amount.value == ASSET("0.000000 GOLOS").amount.value);
-            BOOST_REQUIRE(acct.proxied_vsf_votes_total().value == 0);
-            BOOST_REQUIRE((init_starting_balance - ASSET("0.100 GOLOS")).amount.value == init.balance.amount.value);
+            BOOST_CHECK_EQUAL(acct.vesting_shares.amount.value, (op.fee * (vest_shares / vests)).amount.value);
+            BOOST_CHECK_EQUAL(acct.vesting_withdraw_rate.amount.value, ASSET("0.000000 GOLOS").amount.value);
+            BOOST_CHECK_EQUAL(acct.proxied_vsf_votes_total().value, 0);
+            BOOST_CHECK_EQUAL((init_starting_balance - ASSET("0.100 GOLOS")).amount.value, init.balance.amount.value);
             validate_database();
 
             BOOST_TEST_MESSAGE("--- Test failure of duplicate account creation");
-            BOOST_REQUIRE_THROW(db->push_transaction(tx, database::skip_transaction_dupe_check), fc::exception);
+            GOLOS_CHECK_ERROR_PROPS(db->push_transaction(tx, database::skip_transaction_dupe_check),
+                CHECK_ERROR(tx_invalid_operation, 0,
+                    CHECK_ERROR(object_already_exist, "account", "alice")));
 
-            BOOST_REQUIRE(acct.name == "alice");
-            BOOST_REQUIRE(acct_auth.owner == authority(1, priv_key.get_public_key(), 1));
-            BOOST_REQUIRE(acct_auth.active == authority(2, priv_key.get_public_key(), 2));
-            BOOST_REQUIRE(acct.memo_key == priv_key.get_public_key());
-            BOOST_REQUIRE(acct.proxy == "");
-            BOOST_REQUIRE(acct.created == db->head_block_time());
-            BOOST_REQUIRE(acct.balance.amount.value == ASSET("0.000 GOLOS ").amount.value);
-            BOOST_REQUIRE(acct.sbd_balance.amount.value == ASSET("0.000 GBG").amount.value);
-            BOOST_REQUIRE(acct.vesting_shares.amount.value == (op.fee * (vest_shares / vests)).amount.value);
-            BOOST_REQUIRE(acct.vesting_withdraw_rate.amount.value == ASSET("0.000000 GOLOS").amount.value);
-            BOOST_REQUIRE(acct.proxied_vsf_votes_total().value == 0);
-            BOOST_REQUIRE((init_starting_balance - ASSET("0.100 GOLOS")).amount.value == init.balance.amount.value);
+            BOOST_CHECK_EQUAL(acct.name, "alice");
+            BOOST_CHECK_EQUAL(acct_auth.owner, authority(1, priv_key.get_public_key(), 1));
+            BOOST_CHECK_EQUAL(acct_auth.active, authority(2, priv_key.get_public_key(), 2));
+            BOOST_CHECK_EQUAL(acct.memo_key, priv_key.get_public_key());
+            BOOST_CHECK_EQUAL(acct.proxy, "");
+            BOOST_CHECK_EQUAL(acct.created, db->head_block_time());
+            BOOST_CHECK_EQUAL(acct.balance.amount.value, ASSET("0.000 GOLOS ").amount.value);
+            BOOST_CHECK_EQUAL(acct.sbd_balance.amount.value, ASSET("0.000 GBG").amount.value);
+            BOOST_CHECK_EQUAL(acct.vesting_shares.amount.value, (op.fee * (vest_shares / vests)).amount.value);
+            BOOST_CHECK_EQUAL(acct.vesting_withdraw_rate.amount.value, ASSET("0.000000 GOLOS").amount.value);
+            BOOST_CHECK_EQUAL(acct.proxied_vsf_votes_total().value, 0);
+            BOOST_CHECK_EQUAL((init_starting_balance - ASSET("0.100 GOLOS")).amount.value, init.balance.amount.value);
             validate_database();
 
             BOOST_TEST_MESSAGE("--- Test failure when creator cannot cover fee");
@@ -206,7 +299,9 @@ BOOST_FIXTURE_TEST_SUITE(operation_tests, clean_database_fixture)
             tx.operations.push_back(op);
             tx.sign(init_account_priv_key, db->get_chain_id());
 
-            STEEMIT_REQUIRE_THROW(db->push_transaction(tx, 0), fc::exception);
+            GOLOS_CHECK_ERROR_PROPS(db->push_transaction(tx, 0),
+                CHECK_ERROR(tx_invalid_operation, 0,
+                    CHECK_ERROR(insufficient_funds, STEEMIT_INIT_MINER_NAME, "fund", op.fee.to_string())));
             validate_database();
         }
         FC_LOG_AND_RETHROW()

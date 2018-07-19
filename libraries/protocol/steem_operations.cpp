@@ -18,8 +18,8 @@ namespace golos { namespace protocol {
 
         inline void validate_account_json_metadata(const string& json_metadata) {
             if (json_metadata.size() > 0) {
-                FC_ASSERT(fc::is_utf8(json_metadata), "JSON Metadata not formatted in UTF8");
-                FC_ASSERT(fc::json::is_valid(json_metadata), "JSON Metadata not valid JSON");
+                GOLOS_CHECK_VALUE(fc::is_utf8(json_metadata), "JSON Metadata not formatted in UTF8");
+                GOLOS_CHECK_VALUE(fc::json::is_valid(json_metadata), "JSON Metadata not valid JSON");
             }
         }
 
@@ -28,12 +28,14 @@ namespace golos { namespace protocol {
         }
 
         void account_create_operation::validate() const {
-            validate_account_name(new_account_name);
-            FC_ASSERT(is_asset_type(fee, STEEM_SYMBOL), "Account creation fee must be GOLOS");
-            owner.validate();
-            active.validate();
-            validate_account_json_metadata(json_metadata);
-            FC_ASSERT(fee >= asset(0, STEEM_SYMBOL), "Account creation fee cannot be negative");
+            GOLOS_CHECK_PARAM(new_account_name, validate_account_name(new_account_name));
+            GOLOS_CHECK_PARAM(owner, owner.validate());
+            GOLOS_CHECK_PARAM(active, active.validate());
+            GOLOS_CHECK_PARAM(fee, {
+                GOLOS_CHECK_VALUE(is_asset_type(fee, STEEM_SYMBOL), "Account creation fee must be GOLOS");
+                GOLOS_CHECK_VALUE(fee >= asset(0, STEEM_SYMBOL), "Account creation fee cannot be negative");
+            });
+            GOLOS_CHECK_PARAM(json_metadata, validate_account_json_metadata(json_metadata));
         }
 
         void account_create_with_delegation_operation::validate() const {
