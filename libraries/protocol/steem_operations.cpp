@@ -437,11 +437,13 @@ namespace golos { namespace protocol {
         }
 
         void convert_operation::validate() const {
-            validate_account_name(owner);
-            /// only allow conversion from GBG to GOLOS, allowing the opposite can enable traders to abuse
-            /// market fluxuations through converting large quantities without moving the price.
-            FC_ASSERT(is_asset_type(amount, SBD_SYMBOL), "Can only convert GBG to GOLOS");
-            FC_ASSERT(amount.amount > 0, "Must convert some GBG");
+            GOLOS_CHECK_PARAM(owner, validate_account_name(owner));
+            GOLOS_CHECK_PARAM(amount, {
+                /// only allow conversion from GBG to GOLOS, allowing the opposite can enable traders to abuse
+                /// market fluxuations through converting large quantities without moving the price.
+                GOLOS_CHECK_VALUE(is_asset_type(amount, SBD_SYMBOL), "Can only convert GBG to GOLOS");
+                GOLOS_CHECK_VALUE(amount.amount > 0, "Must convert some GBG");
+            });
         }
 
         void report_over_production_operation::validate() const {

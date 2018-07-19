@@ -1911,17 +1911,22 @@ namespace golos { namespace chain {
         void convert_evaluator::do_apply(const convert_operation &o) {
             database &_db = db();
             const auto &owner = _db.get_account(o.owner);
-            FC_ASSERT(_db.get_balance(owner, o.amount.symbol) >=
-                      o.amount, "Account does not have sufficient balance for conversion.");
+            GOLOS_CHECK_BALANCE(owner, MAIN_BALANCE, o.amount);
 
             _db.adjust_balance(owner, -o.amount);
 
             const auto &fhistory = _db.get_feed_history();
-            FC_ASSERT(!fhistory.current_median_history.is_null(), "Cannot convert SBD because there is no price feed.");
+            GOLOS_CHECK_LOGIC(!fhistory.current_median_history.is_null(), 
+                    logic_exception::no_price_feed_yet,
+                    "Cannot convert SBD because there is no price feed.");
 
             auto steem_conversion_delay = STEEMIT_CONVERSION_DELAY_PRE_HF_16;
             if (_db.has_hardfork(STEEMIT_HARDFORK_0_16__551)) {
                 steem_conversion_delay = STEEMIT_CONVERSION_DELAY;
+            }
+
+            if (nullptr != _db.find<convert_request_object,by_owner>(boost::make_tuple(o.owner, o.requestid))) {
+                GOLOS_THROW_OBJECT_ALREADY_EXIST("convert_request", fc::mutable_variant_object()("account",o.owner)("request_id",o.requestid));
             }
 
             _db.create<convert_request_object>([&](convert_request_object &obj) {
