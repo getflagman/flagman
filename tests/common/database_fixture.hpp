@@ -258,6 +258,13 @@ struct ErrorValidator<golos::protocol::tx_missing_active_auth> {
     }
 };
 
+template<>
+struct ErrorValidator<golos::protocol::tx_missing_owner_auth> {
+    void validate(const std::string& name, const fc::variant& props, int) {
+        BOOST_CHECK_EQUAL(name, "tx_missing_owner_auth");
+    }
+};
+
 #define GOLOS_CHECK_ERROR_PROPS_IMPL( S, C, TL ) \
     GOLOS_CHECK_THROW_PROPS_IMPL(S, golos::golos_exception, C(ex.name(), ex.get_log().at(0).get_data()), TL)
 

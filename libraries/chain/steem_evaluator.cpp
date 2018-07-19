@@ -330,8 +330,9 @@ namespace golos { namespace chain {
         void account_update_evaluator::do_apply(const account_update_operation &o) {
             database &_db = db();
             if (_db.has_hardfork(STEEMIT_HARDFORK_0_1))
-                FC_ASSERT(o.account !=
-                          STEEMIT_TEMP_ACCOUNT, "Cannot update temp account.");
+                GOLOS_CHECK_OP_PARAM(o, account,
+                    GOLOS_CHECK_VALUE(o.account != STEEMIT_TEMP_ACCOUNT,
+                          "Cannot update temp account."));
 
             if ((_db.has_hardfork(STEEMIT_HARDFORK_0_15__465) ||
                  _db.is_producing()) && o.posting) { // TODO: Add HF 15
@@ -344,9 +345,10 @@ namespace golos { namespace chain {
             if (o.owner) {
 #ifndef STEEMIT_BUILD_TESTNET
                 if (_db.has_hardfork(STEEMIT_HARDFORK_0_11))
-                    FC_ASSERT(_db.head_block_time() -
-                              account_auth.last_owner_update >
-                              STEEMIT_OWNER_UPDATE_LIMIT, "Owner authority can only be updated once an hour.");
+                    GOLOS_CHECK_BANDWIDTH(_db.head_block_time(), 
+                            account_auth.last_owner_update + STEEMIT_OWNER_UPDATE_LIMIT,
+                            bandwidth_exception::change_owner_authority_bandwidth,
+                            "Owner authority can only be updated once an hour.");
 #endif
 
                 if ((_db.has_hardfork(STEEMIT_HARDFORK_0_15__465) ||

@@ -169,6 +169,7 @@ namespace golos {
             post_bandwidth,
             comment_bandwidth,
             vote_bandwidth,
+            change_owner_authority_bandwidth,
         };
     };
 
@@ -358,4 +359,5 @@ FC_REFLECT_ENUM(golos::bandwidth_exception::bandwidth_types,
         (post_bandwidth)
         (comment_bandwidth)
         (vote_bandwidth)
+        (change_owner_authority_bandwidth)
 );

@@ -318,20 +318,15 @@ BOOST_FIXTURE_TEST_SUITE(operation_tests, clean_database_fixture)
             op.posting = authority();
             op.posting->weight_threshold = 1;
             op.posting->add_authorities("abcdefghijklmnopq", 1);
+            BOOST_CHECK_NO_THROW(op.validate());
 
-            try {
-                op.validate();
-
-                signed_transaction tx;
-                tx.set_expiration(db->head_block_time() + STEEMIT_MAX_TIME_UNTIL_EXPIRATION);
-                tx.operations.push_back(op);
-                tx.sign(alice_private_key, db->get_chain_id());
-                db->push_transaction(tx, 0);
-
-                BOOST_FAIL("An exception was not thrown for an invalid account name");
-            }
-            catch (fc::exception &) {
-            }
+            signed_transaction tx;
+            tx.set_expiration(db->head_block_time() + STEEMIT_MAX_TIME_UNTIL_EXPIRATION);
+            tx.operations.push_back(op);
+            tx.sign(alice_private_key, db->get_chain_id());
+            GOLOS_CHECK_ERROR_PROPS(db->push_transaction(tx, 0),
+                CHECK_ERROR(tx_invalid_operation, 0,
+                    CHECK_ERROR(missing_object, "account", "abcdefghijklmnop"))); // droped 17-th symbol 'q'
 
             validate_database();
         }
@@ -359,31 +354,35 @@ BOOST_FIXTURE_TEST_SUITE(operation_tests, clean_database_fixture)
 
             BOOST_TEST_MESSAGE("  GOLOS when owner authority is not updated ---");
             BOOST_TEST_MESSAGE("--- Test failure when no signature");
-            STEEMIT_REQUIRE_THROW(db->push_transaction(tx, 0), tx_missing_active_auth);
+            GOLOS_CHECK_ERROR_PROPS(db->push_transaction(tx, 0),
+                CHECK_ERROR(tx_missing_active_auth, 0));
 
             BOOST_TEST_MESSAGE("--- Test failure when wrong signature");
             tx.sign(bob_private_key, db->get_chain_id());
-            STEEMIT_REQUIRE_THROW(db->push_transaction(tx, 0), tx_missing_active_auth);
+            GOLOS_CHECK_ERROR_PROPS(db->push_transaction(tx, 0),
+                CHECK_ERROR(tx_missing_active_auth, 0));
 
             BOOST_TEST_MESSAGE("--- Test failure when containing additional incorrect signature");
             tx.sign(alice_private_key, db->get_chain_id());
-            STEEMIT_REQUIRE_THROW(db->push_transaction(tx, 0), tx_irrelevant_sig);
+            GOLOS_CHECK_ERROR_PROPS(db->push_transaction(tx, 0),
+                CHECK_ERROR(tx_irrelevant_sig, 0));
 
             BOOST_TEST_MESSAGE("--- Test failure when containing duplicate signatures");
             tx.signatures.clear();
             tx.sign(active_key, db->get_chain_id());
             tx.sign(active_key, db->get_chain_id());
-            STEEMIT_REQUIRE_THROW(db->push_transaction(tx, 0), tx_duplicate_sig);
+            GOLOS_CHECK_ERROR_PROPS(db->push_transaction(tx, 0),
+                CHECK_ERROR(tx_duplicate_sig, 0));
 
             BOOST_TEST_MESSAGE("--- Test success on active key");
             tx.signatures.clear();
             tx.sign(active_key, db->get_chain_id());
-            db->push_transaction(tx, 0);
+            BOOST_CHECK_NO_THROW(db->push_transaction(tx, 0));
 
             BOOST_TEST_MESSAGE("--- Test success on owner key alone");
             tx.signatures.clear();
             tx.sign(alice_private_key, db->get_chain_id());
-            db->push_transaction(tx, database::skip_transaction_dupe_check);
+            BOOST_CHECK_NO_THROW(db->push_transaction(tx, database::skip_transaction_dupe_check));
 
             BOOST_TEST_MESSAGE("  GOLOS when owner authority is updated ---");
             BOOST_TEST_MESSAGE("--- Test failure when updating the owner authority with an active key");
@@ -392,27 +391,31 @@ BOOST_FIXTURE_TEST_SUITE(operation_tests, clean_database_fixture)
             op.owner = authority(1, active_key.get_public_key(), 1);
             tx.operations.push_back(op);
             tx.sign(active_key, db->get_chain_id());
-            STEEMIT_REQUIRE_THROW(db->push_transaction(tx, 0), tx_missing_owner_auth);
+            GOLOS_CHECK_ERROR_PROPS(db->push_transaction(tx, 0),
+                CHECK_ERROR(tx_missing_owner_auth, 0));
 
             BOOST_TEST_MESSAGE("--- Test failure when owner key and active key are present");
             tx.sign(alice_private_key, db->get_chain_id());
-            STEEMIT_REQUIRE_THROW(db->push_transaction(tx, 0), tx_irrelevant_sig);
+            GOLOS_CHECK_ERROR_PROPS(db->push_transaction(tx, 0),
+                CHECK_ERROR(tx_irrelevant_sig, 0));
 
             BOOST_TEST_MESSAGE("--- Test failure when incorrect signature");
             tx.signatures.clear();
             tx.sign(alice_post_key, db->get_chain_id());
-            STEEMIT_REQUIRE_THROW(db->push_transaction(tx, 0), tx_missing_owner_auth);
+            GOLOS_CHECK_ERROR_PROPS(db->push_transaction(tx, 0),
+                CHECK_ERROR(tx_missing_owner_auth, 0));
 
             BOOST_TEST_MESSAGE("--- Test failure when duplicate owner keys are present");
             tx.signatures.clear();
             tx.sign(alice_private_key, db->get_chain_id());
             tx.sign(alice_private_key, db->get_chain_id());
-            STEEMIT_REQUIRE_THROW(db->push_transaction(tx, 0), tx_duplicate_sig);
+            GOLOS_CHECK_ERROR_PROPS(db->push_transaction(tx, 0),
+                CHECK_ERROR(tx_duplicate_sig, 0));
 
             BOOST_TEST_MESSAGE("--- Test success when updating the owner authority with an owner key");
             tx.signatures.clear();
             tx.sign(alice_private_key, db->get_chain_id());
-            db->push_transaction(tx, 0);
+            BOOST_CHECK_NO_THROW(db->push_transaction(tx, 0));
 
             validate_database();
         }
@@ -439,21 +442,21 @@ BOOST_FIXTURE_TEST_SUITE(operation_tests, clean_database_fixture)
             tx.operations.push_back(op);
             tx.set_expiration(db->head_block_time() + STEEMIT_MAX_TIME_UNTIL_EXPIRATION);
             tx.sign(alice_private_key, db->get_chain_id());
-            db->push_transaction(tx, 0);
+            BOOST_CHECK_NO_THROW(db->push_transaction(tx, 0));
 
             const account_object &acct = db->get_account("alice");
             const account_authority_object &acct_auth = db->get<account_authority_object, by_account>("alice");
 
-            BOOST_REQUIRE(acct.name == "alice");
-            BOOST_REQUIRE(acct_auth.owner == authority(1, new_private_key.get_public_key(), 1));
-            BOOST_REQUIRE(acct_auth.active == authority(2, new_private_key.get_public_key(), 2));
-            BOOST_REQUIRE(acct.memo_key == new_private_key.get_public_key());
+            BOOST_CHECK_EQUAL(acct.name, "alice");
+            BOOST_CHECK_EQUAL(acct_auth.owner, authority(1, new_private_key.get_public_key(), 1));
+            BOOST_CHECK_EQUAL(acct_auth.active, authority(2, new_private_key.get_public_key(), 2));
+            BOOST_CHECK_EQUAL(acct.memo_key, new_private_key.get_public_key());
 
             /* This is being moved out of consensus
       #ifndef IS_LOW_MEM
-         BOOST_REQUIRE( acct.json_metadata == "{\"bar\":\"foo\"}" );
+         BOOST_CHECK_EQUAL( acct.json_metadata, "{\"bar\":\"foo\"}" );
       #else
-         BOOST_REQUIRE( acct.json_metadata == "" );
+         BOOST_CHECK_EQUAL( acct.json_metadata, "" );
       #endif
       */
 
@@ -465,7 +468,8 @@ BOOST_FIXTURE_TEST_SUITE(operation_tests, clean_database_fixture)
             op.account = "bob";
             tx.operations.push_back(op);
             tx.sign(new_private_key, db->get_chain_id());
-            STEEMIT_REQUIRE_THROW(db->push_transaction(tx, 0), fc::exception)
+            GOLOS_CHECK_ERROR_PROPS(db->push_transaction(tx, 0),
+                CHECK_ERROR(missing_object, "authority", "bob"));
             validate_database();
 
 
@@ -478,7 +482,9 @@ BOOST_FIXTURE_TEST_SUITE(operation_tests, clean_database_fixture)
             op.posting->add_authorities("dave", 1);
             tx.operations.push_back(op);
             tx.sign(new_private_key, db->get_chain_id());
-            STEEMIT_REQUIRE_THROW(db->push_transaction(tx, 0), fc::exception);
+            GOLOS_CHECK_ERROR_PROPS(db->push_transaction(tx, 0),
+                CHECK_ERROR(tx_invalid_operation, 0,
+                    CHECK_ERROR(missing_object, "account", "dave")));
             validate_database();
         }
         FC_LOG_AND_RETHROW()

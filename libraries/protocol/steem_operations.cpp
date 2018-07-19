@@ -52,14 +52,14 @@ namespace golos { namespace protocol {
         }
 
         void account_update_operation::validate() const {
-            validate_account_name(account);
+            GOLOS_CHECK_PARAM(account, validate_account_name(account));
             /*if( owner )
                owner->validate();
             if( active )
                active->validate();
             if( posting )
                posting->validate();*/
-            validate_account_json_metadata(json_metadata);
+            GOLOS_CHECK_PARAM(json_metadata, validate_account_json_metadata(json_metadata));
         }
 
         void account_metadata_operation::validate() const {
