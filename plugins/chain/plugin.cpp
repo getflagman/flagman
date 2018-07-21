@@ -245,9 +245,10 @@ namespace chain {
                 "store-account-metadata-list", boost::program_options::value<std::string>(),
                 "names of accounts to store metadata"
             ) (
-                "store-memo-in-savings-withdraws", boost::program_options::bool_switch()->default_value(true),
+                "store-memo-in-savings-withdraws", boost::program_options::value<bool>()->default_value(true),
                 "store memo for all savings withdraws"
             );
+        //  Do not use bool_switch() in cfg!
         cli.add_options()
             (
                 "replay-blockchain", boost::program_options::bool_switch()->default_value(false),

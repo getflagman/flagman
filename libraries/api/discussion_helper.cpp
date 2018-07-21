@@ -66,17 +66,21 @@ namespace golos { namespace api {
             golos::chain::database& db,
             std::function<void(const golos::chain::database&, const account_name_type&, fc::optional<share_type>&)> fill_reputation,
             std::function<void(const golos::chain::database&, discussion&)> fill_promoted,
-            std::function<void(const golos::chain::database&, const comment_object&, comment_api_object&)> fill_comment_content)
+            std::function<void(const golos::chain::database&, const comment_object&, comment_api_object&)> fill_comment_content,
+            std::function<void(const golos::chain::database&, const comment_object&, comment_api_object&)> fill_comment_reward)
             : database_(db),
               fill_reputation_(fill_reputation),
               fill_promoted_(fill_promoted),
-              fill_comment_content_(fill_comment_content) {
+              fill_comment_content_(fill_comment_content),
+              fill_comment_reward_(fill_comment_reward) {
         }
         impl(
             golos::chain::database& db,
-            std::function<void(const golos::chain::database&, const comment_object&, comment_api_object&)> fill_comment_content)
+            std::function<void(const golos::chain::database&, const comment_object&, comment_api_object&)> fill_comment_content,
+            std::function<void(const golos::chain::database&, const comment_object&, comment_api_object&)> fill_comment_reward)
             :   database_(db),
-                fill_comment_content_(fill_comment_content) {
+                fill_comment_content_(fill_comment_content),
+                fill_comment_reward_(fill_comment_reward) {
         }
         ~impl() = default;
 
@@ -112,6 +116,7 @@ namespace golos { namespace api {
         std::function<void(const golos::chain::database&, const account_name_type&, fc::optional<share_type>&)> fill_reputation_;
         std::function<void(const golos::chain::database&, discussion&)> fill_promoted_;
         std::function<void(const golos::chain::database&, const comment_object&, comment_api_object&)> fill_comment_content_;
+        std::function<void(const golos::chain::database&, const comment_object&, comment_api_object&)> fill_comment_reward_;
     };
 
 // create_comment_api_object 
@@ -154,9 +159,6 @@ namespace golos { namespace api {
         d.max_cashout_time = o.max_cashout_time;
         d.total_vote_weight = o.total_vote_weight;
         d.reward_weight = o.reward_weight;
-        d.total_payout_value = o.total_payout_value;
-        d.curator_payout_value = o.curator_payout_value;
-        d.author_rewards = o.author_rewards;
         d.net_votes = o.net_votes;
         d.mode = o.mode;
         d.root_comment = o.root_comment;
@@ -172,6 +174,10 @@ namespace golos { namespace api {
 
         if (fill_comment_content_) {
             fill_comment_content_(database(), o, d);
+        }
+
+        if (fill_comment_reward_) {
+            fill_comment_reward_(database(), o, d);
         }
 
         if (o.parent_author == STEEMIT_ROOT_POST_PARENT) {
@@ -226,6 +232,7 @@ namespace golos { namespace api {
     ) const {
         pimpl->select_active_votes(result, total_count, author, permlink, limit);
     }
+
 //
 // set_pending_payout
     void discussion_helper::impl::set_pending_payout(discussion& d) const {
@@ -236,9 +243,9 @@ namespace golos { namespace api {
         const auto& props = db.get_dynamic_global_properties();
         const auto& hist = db.get_feed_history();
         asset pot = props.total_reward_fund_steem;
-        if (!hist.current_median_history.is_null()) {
-            pot = pot * hist.current_median_history;
-        }
+
+        if (hist.current_median_history.is_null())
+            return;
 
         u256 total_r2 = to256(props.total_reward_shares2);
 
@@ -249,12 +256,43 @@ namespace golos { namespace api {
             r2 *= pot.amount.value;
             r2 /= total_r2;
 
+            uint64_t payout = static_cast<uint64_t>(r2);
+
+            payout = std::min(payout, uint64_t(d.max_accepted_payout.amount.value));
+
+            uint128_t reward_tokens = uint128_t(payout);
+
+            share_type curation_tokens = 0;
+            if (d.total_vote_weight > 0 && d.allow_curation_rewards) {
+                curation_tokens = ((reward_tokens * db.get_curation_rewards_percent()) / STEEMIT_100_PERCENT).to_uint64();
+                d.pending_payout_gests_value = asset(curation_tokens, STEEM_SYMBOL) * props.get_vesting_share_price();
+            }
+            share_type author_tokens = reward_tokens.to_uint64() - curation_tokens;
+
+            uint32_t benefactor_weights = 0;
+            for (auto &b : d.beneficiaries) {
+                benefactor_weights += b.weight;
+            }
+            auto total_beneficiary = (author_tokens * benefactor_weights) / STEEMIT_100_PERCENT;
+            d.pending_payout_gests_value += (asset(total_beneficiary, STEEM_SYMBOL) * props.get_vesting_share_price());
+            author_tokens -= total_beneficiary;
+
+            auto sbd_steem = (author_tokens * d.percent_steem_dollars) / (2 * STEEMIT_100_PERCENT);
+            auto vesting_steem = asset(author_tokens - sbd_steem, STEEM_SYMBOL);
+            d.pending_payout_gests_value += vesting_steem * props.get_vesting_share_price();
+
+            auto to_sbd = asset((props.sbd_print_rate * sbd_steem) / STEEMIT_100_PERCENT, STEEM_SYMBOL);
+            auto to_steem = asset(sbd_steem, STEEM_SYMBOL) - to_sbd;
+            d.pending_payout_golos_value = to_sbd + to_steem + vesting_steem;
+            d.pending_payout_value = db.to_sbd(to_sbd + to_steem + vesting_steem);
+
+            // End of main calculation
+
             u256 tpp = to256(d.children_rshares2);
             tpp *= pot.amount.value;
             tpp /= total_r2;
 
-            d.pending_payout_value = asset(static_cast<uint64_t>(r2), pot.symbol);
-            d.total_pending_payout_value = asset(static_cast<uint64_t>(tpp), pot.symbol);
+            d.total_pending_payout_value = db.to_sbd(asset(static_cast<uint64_t>(tpp), pot.symbol));
         }
 
         fill_reputation_(db, d.author, d.author_reputation);
@@ -325,16 +363,18 @@ namespace golos { namespace api {
         golos::chain::database& db,
         std::function<void(const golos::chain::database&, const account_name_type&, fc::optional<share_type>&)> fill_reputation,
         std::function<void(const golos::chain::database&, discussion&)> fill_promoted,
-        std::function<void(const database&, const comment_object &, comment_api_object&)> fill_comment_content
+        std::function<void(const database&, const comment_object &, comment_api_object&)> fill_comment_content,
+        std::function<void(const database&, const comment_object &, comment_api_object&)> fill_comment_reward
     ) {
-        pimpl = std::make_unique<impl>(db, fill_reputation, fill_promoted, fill_comment_content);
+        pimpl = std::make_unique<impl>(db, fill_reputation, fill_promoted, fill_comment_content, fill_comment_reward);
     }
 
     discussion_helper::discussion_helper(
             golos::chain::database& db,
-            std::function<void(const database&, const comment_object&, comment_api_object&)> fill_comment_content
+            std::function<void(const database&, const comment_object&, comment_api_object&)> fill_comment_content,
+            std::function<void(const database&, const comment_object&, comment_api_object&)> fill_comment_reward
     ) {
-        pimpl = std::make_unique<impl>(db, fill_comment_content);
+        pimpl = std::make_unique<impl>(db, fill_comment_content, fill_comment_reward);
     }
 
     discussion_helper::~discussion_helper() = default;

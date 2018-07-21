@@ -60,6 +60,7 @@ if(ENABLE_MONGO_PLUGIN)
       golos_chain
       golos::chain_plugin
       golos::follow
+      golos::social_network
       appbase
       fc
       ${LIBBSONCXX_LIBRARIES}

@@ -35,6 +35,10 @@ BOOST_FIXTURE_TEST_SUITE(operation_time_tests, clean_database_fixture)
             fund("dave", 5000);
             vest("dave", 5000);
 
+            BOOST_REQUIRE(db->has_index<golos::plugins::social_network::comment_reward_index>());
+
+            const auto& cr_idx = db->get_index<golos::plugins::social_network::comment_reward_index>().indices().get<golos::plugins::social_network::by_comment>();
+
             price exchange_rate(ASSET("1.000 GOLOS"), ASSET("1.000 GBG"));
             set_price_feed(exchange_rate);
 
@@ -106,7 +110,9 @@ BOOST_FIXTURE_TEST_SUITE(operation_time_tests, clean_database_fixture)
             BOOST_REQUIRE(gpo.total_reward_shares2 == total_comment_fund.reward_shares());
             BOOST_REQUIRE(gpo.total_vesting_shares == total_comment_fund.vesting_shares());
             BOOST_REQUIRE(gpo.total_vesting_fund_steem == total_comment_fund.vesting_fund());
-            BOOST_REQUIRE(bob_comment.total_payout_value == bob_comment_reward.total_payout());
+            auto bob_cr_itr = cr_idx.find(comment_id_type(bob_comment.id));
+            BOOST_REQUIRE(bob_cr_itr != cr_idx.end());
+            BOOST_REQUIRE(bob_cr_itr->total_payout_value == bob_comment_reward.total_payout());
 
             bob_sbd_balance += bob_comment_reward.sbd_payout();
             BOOST_REQUIRE(bob_account.sbd_balance == bob_sbd_balance);
@@ -187,7 +193,11 @@ BOOST_FIXTURE_TEST_SUITE(operation_time_tests, clean_database_fixture)
             vest("sam", 8000);
             fund("dave", 5000);
             vest("dave", 5000);
-            
+
+            BOOST_REQUIRE(db->has_index<golos::plugins::social_network::comment_reward_index>());
+
+            const auto& cr_idx = db->get_index<golos::plugins::social_network::comment_reward_index>().indices().get<golos::plugins::social_network::by_comment>();
+
             db->set_clear_votes(0xFFFFFFFF);
 
             price exchange_rate(ASSET("1.000 GOLOS"), ASSET("1.000 GBG"));
@@ -326,7 +336,9 @@ BOOST_FIXTURE_TEST_SUITE(operation_time_tests, clean_database_fixture)
                 alice_comment_reward.vote_payout(bob_account);
 
             BOOST_REQUIRE(bob_comment.net_rshares.value == 0);
-            BOOST_REQUIRE(bob_comment.total_payout_value == bob_comment_reward.total_payout());
+            auto bob_cr_itr = cr_idx.find(comment_id_type(bob_comment.id));
+            BOOST_REQUIRE(bob_cr_itr != cr_idx.end());
+            BOOST_REQUIRE(bob_cr_itr->total_payout_value == bob_comment_reward.total_payout());
             BOOST_REQUIRE(bob_account.sbd_balance == bob_sbd_balance + bob_comment_reward.sbd_payout());
             BOOST_REQUIRE(bob_account.vesting_shares == bob_total_vesting);
 
@@ -596,10 +608,22 @@ BOOST_FIXTURE_TEST_SUITE(operation_time_tests, clean_database_fixture)
             BOOST_REQUIRE(gpo.total_vesting_shares == total_comment_fund.vesting_shares());
             BOOST_REQUIRE(gpo.total_vesting_fund_steem == total_comment_fund.vesting_fund());
 
-            BOOST_REQUIRE(alice_comment.total_payout_value == alice_comment_reward.total_payout());
-            BOOST_REQUIRE(bob_comment.total_payout_value == bob_comment_reward.total_payout());
-            BOOST_REQUIRE(sam_comment.total_payout_value.amount.value == 0);
-            BOOST_REQUIRE(dave_comment.total_payout_value == dave_comment_reward.total_payout());
+            BOOST_REQUIRE(db->has_index<golos::plugins::social_network::comment_reward_index>());
+
+            const auto& cr_idx = db->get_index<golos::plugins::social_network::comment_reward_index>().indices().get<golos::plugins::social_network::by_comment>();
+
+            auto alice_cr_itr = cr_idx.find(comment_id_type(alice_comment.id));
+            BOOST_REQUIRE(alice_cr_itr != cr_idx.end());
+            BOOST_REQUIRE(alice_cr_itr->total_payout_value == alice_comment_reward.total_payout());
+            auto bob_cr_itr = cr_idx.find(comment_id_type(bob_comment.id));
+            BOOST_REQUIRE(bob_cr_itr != cr_idx.end());
+            BOOST_REQUIRE(bob_cr_itr->total_payout_value == bob_comment_reward.total_payout());
+            auto sam_cr_itr = cr_idx.find(comment_id_type(sam_comment.id));
+            BOOST_REQUIRE(sam_cr_itr != cr_idx.end());
+            BOOST_REQUIRE(sam_cr_itr->total_payout_value.amount.value == 0);
+            auto dave_cr_itr = cr_idx.find(comment_id_type(dave_comment.id));
+            BOOST_REQUIRE(dave_cr_itr != cr_idx.end());
+            BOOST_REQUIRE(dave_cr_itr->total_payout_value == dave_comment_reward.total_payout());
 
             auto ops = get_last_operations(9);
 
@@ -771,7 +795,13 @@ BOOST_FIXTURE_TEST_SUITE(operation_time_tests, clean_database_fixture)
             BOOST_REQUIRE(gpo.total_vesting_shares == total_comment_fund.vesting_shares());
             BOOST_REQUIRE(gpo.total_vesting_fund_steem == total_comment_fund.vesting_fund());
 
-            BOOST_REQUIRE(alice_comment.total_payout_value == alice_comment_reward.total_payout());
+            BOOST_REQUIRE(db->has_index<golos::plugins::social_network::comment_reward_index>());
+
+            const auto& cr_idx = db->get_index<golos::plugins::social_network::comment_reward_index>().indices().get<golos::plugins::social_network::by_comment>();
+
+            auto alice_cr_itr = cr_idx.find(comment_id_type(alice_comment.id));
+            BOOST_REQUIRE(alice_cr_itr != cr_idx.end());
+            BOOST_REQUIRE(alice_cr_itr->total_payout_value == alice_comment_reward.total_payout());
 
             auto alice_total_vesting = alice_starting_vesting + alice_comment_reward.vesting_payout();
             auto alice_total_sbd = alice_starting_sbd + alice_comment_reward.sbd_payout();
@@ -1206,8 +1236,15 @@ BOOST_FIXTURE_TEST_SUITE(operation_time_tests, clean_database_fixture)
 
             generate_blocks(db->get_comment("alice", string("test")).cashout_time, true);
 
+            BOOST_REQUIRE(db->has_index<golos::plugins::social_network::comment_reward_index>());
+
+            const auto& cr_idx = db->get_index<golos::plugins::social_network::comment_reward_index>().indices().get<golos::plugins::social_network::by_comment>();
+
+            auto alice_cr_itr = cr_idx.find(comment_id_type(db->get_comment("alice", string("test")).id));
+            BOOST_REQUIRE(alice_cr_itr != cr_idx.end());
+
             auto start_balance = asset(
-                db->get_comment("alice", string("test")).total_payout_value.amount /2,
+                alice_cr_itr->total_payout_value.amount /2,
                 SBD_SYMBOL);
 
             BOOST_TEST_MESSAGE("Setup conversion to GOLOS");
