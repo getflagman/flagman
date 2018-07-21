@@ -90,7 +90,7 @@ namespace mongo_db {
 
                     try {
                         if (write_raw_blocks) {
-                            //write_raw_block(head_iter->second, virtual_ops[head_iter->first]);
+                            write_raw_block(head_iter->second, virtual_ops[head_iter->first]);
                         }
 
                         state_writer st_writer(all_docs, block);

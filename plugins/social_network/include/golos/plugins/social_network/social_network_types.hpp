@@ -61,10 +61,6 @@ namespace golos { namespace plugins { namespace social_network {
 
             id_type id;
 
-            //comment_reward_object(author_reward_operation &a)
-            //: author_gbg_payout_value(a.sbd_payout), author_golos_payout_value(a.steem_payout), author_gests_payout_value(a.vesting_payout){
-            //}
-
             comment_id_type comment;
             asset total_payout_value{0, SBD_SYMBOL};
             share_type author_rewards = 0;
