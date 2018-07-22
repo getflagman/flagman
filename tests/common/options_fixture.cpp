@@ -100,6 +100,10 @@ void account_direction_fixture::check() {
                     founded_accs.insert(n + ": " + a.second.op.visit(ovisit));
                 }
             }
+            ilog("###");
+            for(auto f : founded_accs) {
+                ilog(f);
+            }
         } else {
             ilog("Account history plugin is not inited.");
         }
