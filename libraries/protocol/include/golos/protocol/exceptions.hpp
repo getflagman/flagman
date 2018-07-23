@@ -200,6 +200,14 @@ namespace golos {
             comment_editable_during_first_24_hours,
             cannot_delete_comment_with_replies,
             cannot_delete_comment_with_positive_votes,
+            comment_options_requires_no_rshares,
+            curation_rewards_cannot_be_reenabled,
+            voting_cannot_be_reenabled,
+            comment_cannot_accept_greater_payout,
+            comment_cannot_accept_greater_percent_GBG,
+            cannot_specify_more_beneficiaries,
+            comment_already_has_beneficiaries,
+            comment_must_not_have_been_voted,
 
             // withdraw_vesting
             insufficient_fee_for_powerdown_registered_account,
@@ -371,6 +379,14 @@ FC_REFLECT_ENUM(golos::logic_exception::error_types,
         (comment_editable_during_first_24_hours)
         (cannot_delete_comment_with_replies)
         (cannot_delete_comment_with_positive_votes)
+        (comment_options_requires_no_rshares)
+        (curation_rewards_cannot_be_reenabled)
+        (voting_cannot_be_reenabled)
+        (comment_cannot_accept_greater_payout)
+        (comment_cannot_accept_greater_percent_GBG)
+        (cannot_specify_more_beneficiaries)
+        (comment_already_has_beneficiaries)
+        (comment_must_not_have_been_voted)
 
         // withdraw_vesting
         (insufficient_fee_for_powerdown_registered_account)

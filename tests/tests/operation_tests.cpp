@@ -6680,7 +6680,8 @@ BOOST_FIXTURE_TEST_SUITE(operation_tests, clean_database_fixture)
             comment_payout_beneficiaries b;
             b.beneficiaries.push_back(beneficiary_route_type(account_name_type("bob"), STEEMIT_100_PERCENT + 1));
             op.extensions.insert(b);
-            STEEMIT_REQUIRE_THROW(op.validate(), fc::assert_exception);
+            GOLOS_CHECK_ERROR_PROPS(op.validate(),
+                CHECK_ERROR(invalid_parameter, "beneficiaries"));
 
             BOOST_TEST_MESSAGE("--- Testing more than 100% total weight");
             b.beneficiaries.clear();
@@ -6688,7 +6689,8 @@ BOOST_FIXTURE_TEST_SUITE(operation_tests, clean_database_fixture)
             b.beneficiaries.push_back(beneficiary_route_type(account_name_type("sam"), STEEMIT_1_PERCENT * 75));
             op.extensions.clear();
             op.extensions.insert(b);
-            STEEMIT_REQUIRE_THROW(op.validate(), fc::assert_exception);
+            GOLOS_CHECK_ERROR_PROPS(op.validate(),
+                CHECK_ERROR(invalid_parameter, "beneficiaries"));
 
             BOOST_TEST_MESSAGE("--- Testing maximum number of routes");
             b.beneficiaries.clear();
@@ -6699,15 +6701,15 @@ BOOST_FIXTURE_TEST_SUITE(operation_tests, clean_database_fixture)
             op.extensions.clear();
             std::sort(b.beneficiaries.begin(), b.beneficiaries.end());
             op.extensions.insert(b);
-            op.validate();
+            BOOST_CHECK_NO_THROW(op.validate());
 
             BOOST_TEST_MESSAGE("--- Testing one too many routes");
             b.beneficiaries.push_back(beneficiary_route_type(account_name_type("bar"), 1));
             std::sort(b.beneficiaries.begin(), b.beneficiaries.end());
             op.extensions.clear();
             op.extensions.insert(b);
-            STEEMIT_REQUIRE_THROW(op.validate(), fc::assert_exception);
-
+            GOLOS_CHECK_ERROR_PROPS(op.validate(),
+                CHECK_ERROR(invalid_parameter, "beneficiaries"));
 
             BOOST_TEST_MESSAGE("--- Testing duplicate accounts");
             b.beneficiaries.clear();
@@ -6715,7 +6717,8 @@ BOOST_FIXTURE_TEST_SUITE(operation_tests, clean_database_fixture)
             b.beneficiaries.push_back(beneficiary_route_type("bob", STEEMIT_1_PERCENT));
             op.extensions.clear();
             op.extensions.insert(b);
-            STEEMIT_REQUIRE_THROW(op.validate(), fc::assert_exception);
+            GOLOS_CHECK_ERROR_PROPS(op.validate(),
+                CHECK_ERROR(invalid_parameter, "beneficiaries"));
 
             BOOST_TEST_MESSAGE("--- Testing incorrect account sort order");
             b.beneficiaries.clear();
@@ -6723,7 +6726,8 @@ BOOST_FIXTURE_TEST_SUITE(operation_tests, clean_database_fixture)
             b.beneficiaries.push_back(beneficiary_route_type("alice", STEEMIT_1_PERCENT));
             op.extensions.clear();
             op.extensions.insert(b);
-            STEEMIT_REQUIRE_THROW(op.validate(), fc::assert_exception);
+            GOLOS_CHECK_ERROR_PROPS(op.validate(),
+                CHECK_ERROR(invalid_parameter, "beneficiaries"));
 
             BOOST_TEST_MESSAGE("--- Testing correct account sort order");
             b.beneficiaries.clear();
@@ -6731,7 +6735,7 @@ BOOST_FIXTURE_TEST_SUITE(operation_tests, clean_database_fixture)
             b.beneficiaries.push_back(beneficiary_route_type("bob", STEEMIT_1_PERCENT));
             op.extensions.clear();
             op.extensions.insert(b);
-            op.validate();
+            BOOST_CHECK_NO_THROW(op.validate());
         }
         FC_LOG_AND_RETHROW()
     }
@@ -6763,10 +6767,7 @@ BOOST_FIXTURE_TEST_SUITE(operation_tests, clean_database_fixture)
             comment.title = "test";
             comment.body = "foobar";
 
-            tx.operations.push_back(comment);
-            tx.set_expiration(db->head_block_time() + STEEMIT_MIN_TRANSACTION_EXPIRATION_LIMIT);
-            tx.sign(alice_private_key, db->get_chain_id());
-            db->push_transaction(tx);
+            BOOST_CHECK_NO_THROW(push_tx_with_ops(tx, alice_private_key, comment));
 
             BOOST_TEST_MESSAGE("--- Test failure on max of benefactors");
             b.beneficiaries.push_back(beneficiary_route_type(account_name_type("bob"), STEEMIT_1_PERCENT));
@@ -6782,10 +6783,9 @@ BOOST_FIXTURE_TEST_SUITE(operation_tests, clean_database_fixture)
             op.permlink = "test";
             op.allow_curation_rewards = false;
             op.extensions.insert(b);
-            tx.clear();
-            tx.operations.push_back(op);
-            tx.sign(alice_private_key, db->get_chain_id());
-            GOLOS_CHECK_THROW_PROPS(db->push_transaction(tx), tx_invalid_operation, {});
+            GOLOS_CHECK_ERROR_PROPS(push_tx_with_ops_throw(tx, alice_private_key, op),
+                CHECK_ERROR(tx_invalid_operation, 0,
+                    CHECK_ERROR(logic_exception, logic_exception::cannot_specify_more_beneficiaries)));
 
 
             BOOST_TEST_MESSAGE("--- Test specifying a non-existent benefactor");
@@ -6793,10 +6793,9 @@ BOOST_FIXTURE_TEST_SUITE(operation_tests, clean_database_fixture)
             b.beneficiaries.push_back(beneficiary_route_type(account_name_type("dave"), STEEMIT_1_PERCENT));
             op.extensions.clear();
             op.extensions.insert(b);
-            tx.clear();
-            tx.operations.push_back(op);
-            tx.sign(alice_private_key, db->get_chain_id());
-            GOLOS_CHECK_THROW_PROPS(db->push_transaction(tx), tx_invalid_operation, {});
+            GOLOS_CHECK_ERROR_PROPS(push_tx_with_ops_throw(tx, alice_private_key, op),
+                CHECK_ERROR(tx_invalid_operation, 0,
+                    CHECK_ERROR(missing_object, "account", "dave")));
 
 
             BOOST_TEST_MESSAGE("--- Test setting when comment has been voted on");
@@ -6815,14 +6814,13 @@ BOOST_FIXTURE_TEST_SUITE(operation_tests, clean_database_fixture)
             tx.operations.push_back(op);
             tx.sign(alice_private_key, db->get_chain_id());
             tx.sign(bob_private_key, db->get_chain_id());
-            GOLOS_CHECK_THROW_PROPS(db->push_transaction(tx), tx_invalid_operation, {});
+            GOLOS_CHECK_ERROR_PROPS(db->push_transaction(tx),
+                CHECK_ERROR(tx_invalid_operation, 1,
+                    CHECK_ERROR(logic_exception, logic_exception::comment_options_requires_no_rshares)));
 
 
             BOOST_TEST_MESSAGE("--- Test success");
-            tx.clear();
-            tx.operations.push_back(op);
-            tx.sign(alice_private_key, db->get_chain_id());
-            db->push_transaction(tx);
+            BOOST_CHECK_NO_THROW(push_tx_with_ops(tx, alice_private_key, op));
 
 
             BOOST_TEST_MESSAGE("--- Test setting when there are already beneficiaries");
@@ -6830,8 +6828,9 @@ BOOST_FIXTURE_TEST_SUITE(operation_tests, clean_database_fixture)
             b.beneficiaries.push_back(beneficiary_route_type(account_name_type("sam"), 25 * STEEMIT_1_PERCENT));
             op.extensions.clear();
             op.extensions.insert(b);
-            tx.sign(alice_private_key, db->get_chain_id());
-            GOLOS_CHECK_THROW_PROPS(db->push_transaction(tx), tx_duplicate_transaction, {});
+            GOLOS_CHECK_ERROR_PROPS(push_tx_with_ops_throw(tx, alice_private_key, op),
+                CHECK_ERROR(tx_invalid_operation, 0,
+                    CHECK_ERROR(logic_exception, logic_exception::comment_already_has_beneficiaries)));
         }
         FC_LOG_AND_RETHROW()
     }

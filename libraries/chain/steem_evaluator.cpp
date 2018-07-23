@@ -475,17 +475,21 @@ namespace golos { namespace chain {
 
             void operator()(const comment_payout_beneficiaries &cpb) const {
                 if (_db.is_producing()) {
-                    FC_ASSERT(cpb.beneficiaries.size() <= STEEMIT_MAX_COMMENT_BENEFICIARIES,
-                              "Cannot specify more than ${m} beneficiaries.", ("m", STEEMIT_MAX_COMMENT_BENEFICIARIES));
+                    GOLOS_CHECK_LOGIC(cpb.beneficiaries.size() <= STEEMIT_MAX_COMMENT_BENEFICIARIES,
+                            logic_exception::cannot_specify_more_beneficiaries,
+                            "Cannot specify more than ${m} beneficiaries.", ("m", STEEMIT_MAX_COMMENT_BENEFICIARIES));
                 }
 
-                FC_ASSERT(_c.beneficiaries.size() == 0, "Comment already has beneficiaries specified.");
-                FC_ASSERT(_c.abs_rshares == 0, "Comment must not have been voted on before specifying beneficiaries.");
+                GOLOS_CHECK_LOGIC(_c.beneficiaries.size() == 0,
+                        logic_exception::comment_already_has_beneficiaries,
+                        "Comment already has beneficiaries specified.");
+                GOLOS_CHECK_LOGIC(_c.abs_rshares == 0,
+                        logic_exception::comment_must_not_have_been_voted,
+                        "Comment must not have been voted on before specifying beneficiaries.");
 
                 _db.modify(_c, [&](comment_object &c) {
                     for (auto &b : cpb.beneficiaries) {
-                        auto acc = _db.find< account_object, by_name >( b.account );
-                        FC_ASSERT( acc != nullptr, "Beneficiary \"${a}\" must exist.", ("a", b.account) );
+                        _db.get_account(b.account);   // check beneficiary exists
                         c.beneficiaries.push_back(b);
                     }
                 });
@@ -496,30 +500,31 @@ namespace golos { namespace chain {
             database &_db = db();
             if (_db.has_hardfork(STEEMIT_HARDFORK_0_10)) {
                 const auto &auth = _db.get_account(o.author);
-                FC_ASSERT(!(auth.owner_challenged || auth.active_challenged),
-                          "Operation cannot be processed because account is currently challenged.");
+                GOLOS_CHECK_LOGIC(!(auth.owner_challenged || auth.active_challenged),
+                        logic_exception::account_is_currently_challenged,
+                        "Operation cannot be processed because account is currently challenged.");
             }
 
 
             const auto &comment = _db.get_comment(o.author, o.permlink);
             if (!o.allow_curation_rewards || !o.allow_votes || o.max_accepted_payout < comment.max_accepted_payout) {
-                FC_ASSERT(comment.abs_rshares == 0,
-                          "One of the included comment options requires the comment to have no rshares allocated to it.");
+                GOLOS_CHECK_LOGIC(comment.abs_rshares == 0,
+                        logic_exception::comment_options_requires_no_rshares,
+                        "One of the included comment options requires the comment to have no rshares allocated to it.");
             }
 
-            if (!_db.has_hardfork(STEEMIT_HARDFORK_0_17__432)) {// TODO: Remove after hardfork 17
-                FC_ASSERT(o.extensions.size() == 0,
-                          "Operation extensions for the comment_options_operation are not currently supported.");
-            }
-
-            FC_ASSERT(comment.allow_curation_rewards >= o.allow_curation_rewards,
-                      "Curation rewards cannot be re-enabled.");
-            FC_ASSERT(comment.allow_votes >= o.allow_votes,
-                      "Voting cannot be re-enabled.");
-            FC_ASSERT(comment.max_accepted_payout >= o.max_accepted_payout,
-                      "A comment cannot accept a greater payout.");
-            FC_ASSERT(comment.percent_steem_dollars >= o.percent_steem_dollars,
-                      "A comment cannot accept a greater percent SBD.");
+            GOLOS_CHECK_LOGIC(comment.allow_curation_rewards >= o.allow_curation_rewards,
+                    logic_exception::curation_rewards_cannot_be_reenabled,
+                    "Curation rewards cannot be re-enabled.");
+            GOLOS_CHECK_LOGIC(comment.allow_votes >= o.allow_votes,
+                    logic_exception::voting_cannot_be_reenabled,
+                    "Voting cannot be re-enabled.");
+            GOLOS_CHECK_LOGIC(comment.max_accepted_payout >= o.max_accepted_payout,
+                    logic_exception::comment_cannot_accept_greater_payout,
+                    "A comment cannot accept a greater payout.");
+            GOLOS_CHECK_LOGIC(comment.percent_steem_dollars >= o.percent_steem_dollars,
+                    logic_exception::comment_cannot_accept_greater_percent_GBG,
+                    "A comment cannot accept a greater percent SBD.");
 
             _db.modify(comment, [&](comment_object &c) {
                 c.max_accepted_payout = o.max_accepted_payout;
@@ -539,7 +544,7 @@ namespace golos { namespace chain {
 
                 if (_db.is_producing() ||
                     _db.has_hardfork(STEEMIT_HARDFORK_0_5__55))
-                    GOLOS_CHECK_LOGIC(o.title.size() + o.body.size() + o.json_metadata.size(), 
+                    GOLOS_CHECK_LOGIC(o.title.size() + o.body.size() + o.json_metadata.size(),
                             logic_exception::cannot_update_comment_because_nothing_changed,
                             "Cannot update comment because nothing appears to be changing.");
 
@@ -549,7 +554,7 @@ namespace golos { namespace chain {
                 const auto &auth = _db.get_account(o.author); /// prove it exists
 
                 if (_db.has_hardfork(STEEMIT_HARDFORK_0_10))
-                    GOLOS_CHECK_LOGIC(!(auth.owner_challenged || auth.active_challenged), 
+                    GOLOS_CHECK_LOGIC(!(auth.owner_challenged || auth.active_challenged),
                             logic_exception::account_is_currently_challenged,
                             "Operation cannot be processed because account is currently challenged.");
 

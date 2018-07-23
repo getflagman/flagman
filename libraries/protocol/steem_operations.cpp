@@ -107,37 +107,40 @@ namespace golos { namespace protocol {
         };
 
         void comment_payout_beneficiaries::validate() const {
-            uint32_t sum = 0;
+            fc::safe<uint32_t> sum = 0;
 
-            FC_ASSERT(beneficiaries.size(), "Must specify at least one beneficiary");
-            FC_ASSERT(beneficiaries.size() < 128,
-                      "Cannot specify more than 127 beneficiaries."); // Require size serializtion fits in one byte.
+            GOLOS_CHECK_PARAM(beneficiaries, {
+                GOLOS_CHECK_VALUE(beneficiaries.size(), "Must specify at least one beneficiary");
+                GOLOS_CHECK_VALUE(beneficiaries.size() < 128,
+                          "Cannot specify more than 127 beneficiaries."); // Require size serializtion fits in one byte.
 
-            validate_account_name(beneficiaries[0].account);
-            FC_ASSERT(beneficiaries[0].weight <= STEEMIT_100_PERCENT,
-                      "Cannot allocate more than 100% of rewards to one account");
-            sum += beneficiaries[0].weight;
-            FC_ASSERT(sum <= STEEMIT_100_PERCENT,
-                      "Cannot allocate more than 100% of rewards to a comment"); // Have to check incrementally to avoid overflow
+                try {
+                    for (auto beneficiar: beneficiaries) {
+                        validate_account_name(beneficiaries[0].account);
+                        GOLOS_CHECK_VALUE(beneficiar.weight <= STEEMIT_100_PERCENT,
+                                "Cannot allocate more than 100% of rewards to one account");
+                        sum += beneficiar.weight;
+                    }
 
-            for (size_t i = 1; i < beneficiaries.size(); i++) {
-                validate_account_name( beneficiaries[i].account);
-                FC_ASSERT(beneficiaries[i].weight <= STEEMIT_100_PERCENT,
-                          "Cannot allocate more than 100% of rewards to one account");
-                sum += beneficiaries[i].weight;
-                FC_ASSERT(sum <= STEEMIT_100_PERCENT,
-                          "Cannot allocate more than 100% of rewards to a comment"); // Have to check incrementally to avoid overflow
-                FC_ASSERT(beneficiaries[i - 1] < beneficiaries[i],
-                          "Benficiaries must be specified in sorted order (account ascending)");
-            }
+                    GOLOS_CHECK_VALUE(sum <= STEEMIT_100_PERCENT,
+                            "Cannot allocate more than 100% of rewards to a comment");
+                } catch(const fc::overflow_exception& e) {
+                    GOLOS_CHECK_VALUE(false, "Cannot allocate more than 100% of rewards to a comment"); // Have to check incrementally to avoid overflow
+                }
+
+                for (size_t i = 1; i < beneficiaries.size(); i++) {
+                    GOLOS_CHECK_VALUE(beneficiaries[i - 1] < beneficiaries[i],
+                            "Benficiaries ${first} and ${second} not in sorted order (account ascending)",
+                            ("first", beneficiaries[i-1].account)("second", beneficiaries[i].account));
+                }
+            });
         }
 
         void comment_options_operation::validate() const {
-            validate_account_name(author);
-            FC_ASSERT(percent_steem_dollars <= STEEMIT_100_PERCENT, "Percent cannot exceed 100%");
-            FC_ASSERT(max_accepted_payout.symbol == SBD_SYMBOL, "Max accepted payout must be in GBG");
-            FC_ASSERT(max_accepted_payout.amount.value >= 0, "Cannot accept less than 0 payout");
-            validate_permlink(permlink);
+            GOLOS_CHECK_PARAM_ACCOUNT(author);
+            GOLOS_CHECK_PARAM(percent_steem_dollars, GOLOS_CHECK_VALUE_LE(percent_steem_dollars, STEEMIT_100_PERCENT));
+            GOLOS_CHECK_PARAM(max_accepted_payout, GOLOS_CHECK_ASSET_GE0(max_accepted_payout, GBG));
+            GOLOS_CHECK_PARAM(permlink, validate_permlink(permlink));
             for (auto &e : extensions) {
                 e.visit(comment_options_extension_validate_visitor());
             }
